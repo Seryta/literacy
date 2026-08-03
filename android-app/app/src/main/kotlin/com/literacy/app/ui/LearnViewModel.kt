@@ -199,17 +199,34 @@ class LearnViewModel(
     }
 
     fun onButton(action: String) {
-        if (action == "pause" || action == "end") {
-            // review-10 P1-11：busy 不丢暂停/结束——立即生效；在途回包副作用由
-            // ReplayRunner 的 paused/ended 检查拦截（P1-12 已实现）
+        if (action == "pause") {
+            // review-10 P1-11：暂停本地立即执行（无网络调用）——在途回包副作用由
+            // ReplayRunner 的 paused 检查拦截（P1-12 已实现）
             orchestrator.button(action)
             refreshUi()
+            return
+        }
+        if (action == "end") {
+            // review-11 P1-2：结束含同步网络（llmTurn → provider OkHttp execute）——
+            // 不再主线程同步执行，走 submit 串行（IO 线程）；busy 时排队等待在途请求
+            // 完成（不丢结束、不与在途并发改 runner，迟到回包由 ReplayRunner sessionEnded 检查兜底）
+            submitEnd()
             return
         }
         submit {
             if (action == "review_stage") orchestrator.advanceReview()
             else orchestrator.button(action)
         }
+    }
+
+    /** review-11 P1-2：结束串行提交（IO 线程）。在途请求进行中时排队，完成后执行。 */
+    private fun submitEnd() {
+        val inflight = currentJob
+        if (busy && inflight != null && inflight.isActive) {
+            inflight.invokeOnCompletion { submitEnd() }   // 在途 finally 复位 busy 后再提交
+            return
+        }
+        submit { orchestrator.button("end") }
     }
 
     private fun refreshUi() {

@@ -40,6 +40,7 @@ private fun phaseLabelZh(phase: String): String = when (phase) {
 @Composable
 fun LearnScreen(
     viewModel: LearnViewModel,
+    partialText: String = "",   // 实时字幕（自动语音识别中用户说的话）
     onBack: () -> Unit,
 ) {
     val ui = viewModel.ui
@@ -50,6 +51,10 @@ fun LearnScreen(
     // 会把旧轨迹一并提交（与 Canvas 重建的 resetKey 保持一致）
     LaunchedEffect(ui.phase, viewModel.clearGridSignal) { drawnLibrary = emptyList(); strokeCount = 0 }
     val focusManager = LocalFocusManager.current
+    // 用户开口（实时转写非空）→ 打断教学 TTS，让位给用户（实时对话）
+    LaunchedEffect(partialText) {
+        if (partialText.isNotBlank()) viewModel.stopTts()
+    }
 
     Column(
         modifier = Modifier
@@ -206,13 +211,31 @@ fun LearnScreen(
             )
         }
 
-        // 输入区（第一版以文本框模拟语音；P1-14：loading/paused 时禁用防并发乱序）
+        // ── 实时字幕：正在听用户说话（边说边显示）──
+        if (partialText.isNotBlank()) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            ) {
+                Text(
+                    "🎤 $partialText",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+        } else if (ui.listening) {
+            Text("🎤 我在听…", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        // 输入区（打字辅助：家人可帮忙输入；语音为主交互，已在自动监听）
         // 右侧留 76dp：悬浮吉祥物默认位置，避免遮挡输入
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = input,
             onValueChange = { input = it },
-            label = { Text("和老师说句话") },
+            label = { Text("打字输入（家人可帮忙）") },
             singleLine = true,
             enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // review-09 P1-12：结束后禁输入
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

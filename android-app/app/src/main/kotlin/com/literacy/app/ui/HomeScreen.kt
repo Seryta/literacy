@@ -200,7 +200,7 @@ fun HomeScreen(
                 Text("想学别的字？", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "不会打字也没关系，可以让家人帮忙，或用右下角语音按钮说",
+                    "不会打字也没关系，让家人帮忙输入，或者直接对宠物说",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

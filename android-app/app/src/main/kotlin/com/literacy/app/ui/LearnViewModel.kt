@@ -143,6 +143,11 @@ class LearnViewModel(
         tts = null
     }
 
+    /** 停止当前朗读（用户开口打断教学语——实时对话）。 */
+    fun stopTts() {
+        try { tts?.stop() } catch (e: Exception) {}
+    }
+
     /** 开始学习一个字（支持 "字:stage" 直达格式，开发模式用）。 */
     fun startLearning(char: String) {
         val parts = char.split(":")

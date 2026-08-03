@@ -82,12 +82,34 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     val voiceHandler = remember { mutableStateOf<(String) -> Unit>({}) }
     // 吉祥物气泡提示（各分支重组时设置）
     val bubbleText = remember { mutableStateOf<String?>(null) }
-    // 麦克风运行时权限（引导自动语音需要；拒绝则回落手动按钮）
+    // 麦克风运行时权限（引导/学习自动语音需要；拒绝则回落手动按钮）
     var audioGranted by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         audioGranted = granted
         if (!granted) scope.launch { snackbarHostState.showSnackbar("需要麦克风权限才能语音对话") }
     }
+    // 学习页实时字幕（自动监听 partial）
+    var learnPartial by remember { mutableStateOf("") }
+    // 自动监听启动器（引导/学习页共用）：连续监听 + 实时字幕 + 硬错误降级
+    val startAutoListen = remember {
+        { onText: (String) -> Unit, onPartial: (String) -> Unit ->
+            speech.start(
+                callback = { outcome ->
+                    when (outcome) {
+                        is SpeechInputManager.SpeechOutcome.Text -> onText(outcome.text)
+                        is SpeechInputManager.SpeechOutcome.Error -> {
+                            listening = false
+                            scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                        }
+                    }
+                },
+                autoRestart = true,
+                onPartial = onPartial,
+            )
+        }
+    }
+    // 当前页的自动监听重启器（悬浮球点击时调用：让用户立即说话）；非自动监听页为空 → 悬浮球走一次性识别
+    val autoListenRestart = remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -98,19 +120,23 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     listening = listening,
                     bubbleText = bubbleText.value,
                     onClick = {
-                        if (listening) {
+                        // 自动监听页（学习/引导）：重启监听让用户立即说话；其他页：一次性识别
+                        val restart = autoListenRestart.value
+                        if (restart != null) {
                             speech.cancel()
-                            listening = false
-                        } else {
-                            val ok = speech.start(callback = { outcome ->
-                                listening = false
-                                bubbleText.value = null
-                                when (outcome) {
-                                    is SpeechInputManager.SpeechOutcome.Text -> voiceHandler.value(outcome.text)
-                                    is SpeechInputManager.SpeechOutcome.Error ->
-                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
-                                }
-                            })
+                            restart()
+                        } else if (!listening) {
+                            val ok = speech.start(
+                                callback = { outcome ->
+                                    listening = false
+                                    bubbleText.value = null
+                                    when (outcome) {
+                                        is SpeechInputManager.SpeechOutcome.Text -> voiceHandler.value(outcome.text)
+                                        is SpeechInputManager.SpeechOutcome.Error ->
+                                            scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                                    }
+                                },
+                            )
                             if (ok) listening = true
                             else scope.launch { snackbarHostState.showSnackbar("语音服务不可用") }
                         }
@@ -135,26 +161,19 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
+                val obOnText: (String) -> Unit = { obVm.handleVoice(it) }
                 LaunchedEffect(audioGranted) {
                     if (audioGranted && !listening) {
-                        val ok = speech.start(
-                            callback = { outcome ->
-                                when (outcome) {
-                                    is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
-                                    // 硬错误（无权限/无音频等）：停止自动监听，回落手动按钮兜底
-                                    is SpeechInputManager.SpeechOutcome.Error -> {
-                                        listening = false
-                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
-                                    }
-                                }
-                            },
-                            autoRestart = true,
-                            onPartial = { obVm.onPartial(it) },   // 实时字幕：边说边显示
-                        )
+                        val ok = startAutoListen(obOnText, { obVm.onPartial(it) })
                         listening = ok
                     }
                 }
+                autoListenRestart.value = {
+                    val ok = startAutoListen(obOnText, { obVm.onPartial(it) })
+                    listening = ok
+                }
                 val stopAutoListen = {
+                    autoListenRestart.value = null
                     speech.cancel()
                     listening = false
                 }
@@ -173,31 +192,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                 OnboardingScreen(
                     viewModel = obVm,
                     listening = listening,
-                    onSpeak = {
-                        if (listening) {
-                            // 手动点按钮时：如果自动监听在跑，重启一次（让用户立即说话）
-                            speech.cancel()
-                            speech.start({ outcome ->
-                                listening = false
-                                when (outcome) {
-                                    is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
-                                    is SpeechInputManager.SpeechOutcome.Error ->
-                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
-                                }
-                            })
-                        } else {
-                            val ok = speech.start({ outcome ->
-                                listening = false
-                                when (outcome) {
-                                    is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
-                                    is SpeechInputManager.SpeechOutcome.Error ->
-                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
-                                }
-                            })
-                            if (ok) listening = true
-                            else scope.launch { snackbarHostState.showSnackbar("语音服务不可用") }
-                        }
-                    },
                     onSkip = {
                         stopAutoListen()
                         settings.onboardingDone = true
@@ -306,9 +300,27 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     )
                     // 学习页语音全控制：操作命令（帮助/跳过/暂停/继续/结束/复习控制）→ 按钮；
                     // 其余转写文本 → 教学管线（本地意图解析 + LLM）
-                    voiceHandler.value = { text ->
+                    val learnOnText: (String) -> Unit = { text ->
+                        learnPartial = ""
                         val cmd = VoiceCommandParser.learnCommand(text)
                         if (cmd != null) vm.onButton(cmd) else vm.onUserInput(text)
+                    }
+                    voiceHandler.value = learnOnText
+                    // 学习页自动语音（主场景，与引导一致：自动听 + 实时字幕）
+                    LaunchedEffect(Unit) {
+                        if (!audioGranted) {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                    LaunchedEffect(audioGranted) {
+                        if (audioGranted && !listening) {
+                            val ok = startAutoListen(learnOnText, { learnPartial = it })
+                            listening = ok
+                        }
+                    }
+                    autoListenRestart.value = {
+                        val ok = startAutoListen(learnOnText, { learnPartial = it })
+                        listening = ok
                     }
                     // 吉祥物气泡：跟随时机性提示（loading/paused/阶段）
                     val ui = vm.ui   // Compose state，重组自动追踪
@@ -324,7 +336,11 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     }
                     LearnScreen(
                         viewModel = vm,
+                        partialText = learnPartial,
                         onBack = {
+                            autoListenRestart.value = null
+                            speech.cancel()   // 离开学习页停自动监听
+                            listening = false
                             vm.releaseTts()   // review-09 P1-11：离开释放 TTS（Activity 级 VM 不随 composable 销毁）
                             vm.cancelInFlight()   // review-10 P1-11：离页取消在途请求
                             screen = Screen.HOME

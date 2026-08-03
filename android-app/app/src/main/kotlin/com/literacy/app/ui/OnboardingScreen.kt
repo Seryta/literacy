@@ -31,7 +31,6 @@ import com.literacy.app.ui.theme.LiteracyDimens
 fun OnboardingScreen(
     viewModel: OnboardingViewModel,
     listening: Boolean,
-    onSpeak: () -> Unit,
     onSkip: () -> Unit,
 ) {
     val ui = viewModel.ui
@@ -222,21 +221,19 @@ fun OnboardingScreen(
             )
         }
 
-        // ── 语音：引导阶段自动持续听，无需点击；此按钮为听不清时的兜底 ──
+        // ── 语音状态：引导阶段自动持续听，无需任何点击 ──
         Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = onSpeak,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(LiteracyDimens.ActionButtonHeight),
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
             shape = MaterialTheme.shapes.extraLarge,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (listening) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-            ),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                if (listening) "🎙️ 正在听，直接说话就行" else "听不清时，点这里说话",
-                fontSize = 19.sp,
+                if (listening) "🎤 我在听，你直接说就行" else "🎤 没听清时，说慢一点再试一次",
+                fontSize = 17.sp,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(vertical = 14.dp, horizontal = 12.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
         Spacer(Modifier.height(8.dp))

@@ -230,7 +230,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         }
                     }
                     // 首页语音命令：设置 / 建档 / 学X字（语音控制界面操作）
-                    voiceHandler.value = { text ->
+                    val homeOnText: (String) -> Unit = { text ->
                         when (val action = VoiceCommandParser.parse(text)) {
                             is VoiceCommandParser.Action.OpenSettings -> screen = Screen.SETTINGS
                             is VoiceCommandParser.Action.OpenProfile -> screen = Screen.PROFILE
@@ -245,7 +245,39 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                                 scope.launch { snackbarHostState.showSnackbar("没听懂，试试说：我想学家") }
                         }
                     }
-                    bubbleText.value = null
+                    voiceHandler.value = homeOnText
+                    // 由我们主导：进入首页自动听 + 机器人主动问今天学什么
+                    val homeTts = remember { LocalTts(context) }
+                    DisposableEffect(Unit) {
+                        onDispose {
+                            homeTts.shutdown()
+                            speech.cancel()   // 离开首页停监听（避免与学习/设置页冲突）
+                            listening = false
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        if (!audioGranted) {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                    LaunchedEffect(audioGranted) {
+                        if (audioGranted && !listening) {
+                            val ok = startAutoListen(homeOnText, {})
+                            listening = ok
+                        }
+                    }
+                    autoListenRestart.value = {
+                        val ok = startAutoListen(homeOnText, {})
+                        listening = ok
+                    }
+                    // 进入首页延迟主动招呼（陪伴感：不识字用户不会被"静默等待"困住）
+                    LaunchedEffect(Unit) {
+                        kotlinx.coroutines.delay(1500)
+                        if (screen == Screen.HOME) {
+                            bubbleText.value = "今天想学什么？直接说，比如：我想学家"
+                            homeTts.speak("今天想学什么？直接告诉我，比如：我想学家。")
+                        }
+                    }
                     HomeScreen(
                         hanzi = hanzi,
                         hasApiKey = settings.hasApiKey,

@@ -51,6 +51,10 @@ fun OnboardingScreen(
     LaunchedEffect(ui.robotText) {
         if (ui.robotText.isNotBlank()) tts.speak(ui.robotText)
     }
+    // 用户开口（实时转写非空）→ 打断机器人说话，让位给用户（实时对话）
+    LaunchedEffect(viewModel.partialText) {
+        if (viewModel.partialText.isNotBlank()) tts.stop()
+    }
 
     // 机器人浮动动画（活泼感）
     val transition = rememberInfiniteTransition(label = "obFloat")
@@ -140,38 +144,48 @@ fun OnboardingScreen(
         }
         Spacer(Modifier.height(4.dp))
 
-        // ── 选宠物（PICK_MASCOT）：4 个卡片横排 ──
+        // ── 选宠物（PICK_MASCOT）：纵向大卡片列表（从上到下，说"第几个"）──
         if (ui.step == OnboardingViewModel.Step.PICK_MASCOT || ui.step == OnboardingViewModel.Step.WELCOME) {
-            Spacer(Modifier.height(20.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Mascots.candidates.forEachIndexed { index, mascot ->
-                    val selected = index == ui.mascotIndex
-                    Card(
-                        onClick = { viewModel.onSelectMascot(index) },
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        ),
-                        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            Spacer(Modifier.height(16.dp))
+            Mascots.candidates.forEachIndexed { index, mascot ->
+                val selected = index == ui.mascotIndex
+                Card(
+                    onClick = { viewModel.onSelectMascot(index) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    ),
+                    border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            MascotAvatar(variant = mascot.variant, size = 52.dp)
-                            Spacer(Modifier.height(6.dp))
-                            Text("${index + 1}. ${mascot.variant.label}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            "${index + 1}",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(32.dp),
+                        )
+                        MascotAvatar(variant = mascot.variant, size = 56.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(mascot.variant.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(mascot.variant.tagline, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (selected) {
+                            Spacer(Modifier.weight(1f))
+                            Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                "说“第几个”也可以选，比如“第一个”",
+                "从上往下数，说“第几个”也可以选，比如“第一个”",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

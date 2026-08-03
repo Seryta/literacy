@@ -167,7 +167,9 @@ class ReplayRunner(
     fun voice(intent: VoiceIntent = VoiceIntent.OTHER, text: String = ""): Boolean {
         // review-10 P1-5：REQUEST_NEW_CHAR/SWITCH_PATH 不再只识别不改变状态
         if (intent == VoiceIntent.REQUEST_NEW_CHAR) {
-            val next = nextCharSelector?.invoke()
+            // review-11 P2-2：解析 text 中的目标字（"我想学'药'字"→药）——有则选该字，无则 nextCharSelector
+            val target = extractTargetChar(text)
+            val next = target ?: nextCharSelector?.invoke()
             state = state.copy(
                 phase = Phase.INTRODUCE,
                 char = next ?: state.char,
@@ -181,12 +183,9 @@ class ReplayRunner(
             return true
         }
         if (intent == VoiceIntent.SWITCH_PATH) {
-            val nextPath = when (state.learningPath) {
-                com.literacy.agent.model.LearningPath.WRITE_PARALLEL -> com.literacy.agent.model.LearningPath.READ_PRIMARY
-                com.literacy.agent.model.LearningPath.READ_PRIMARY -> com.literacy.agent.model.LearningPath.READ_ONLY
-                com.literacy.agent.model.LearningPath.READ_ONLY -> com.literacy.agent.model.LearningPath.WRITE_PARALLEL
-            }
-            state = state.copy(learningPath = nextPath)
+            // review-11 P2-2：SWITCH_PATH 语义=拒绝书写（不写字/手不方便）——确定性映射到
+            // 无书写路径 READ_ONLY，不再三态循环（重复"不写字"不会回到书写路径）
+            state = state.copy(learningPath = com.literacy.agent.model.LearningPath.READ_ONLY)
             return true
         }
         val ev = VoiceInput(text, intent)
@@ -298,6 +297,13 @@ class ReplayRunner(
     /** review-10 P1-9：SafetyGuard 过滤命中标记（UI/TTS 用过滤文本；告警注入下一轮上下文）。 */
     var filterHit: Boolean = false
         private set
+
+    /** 插单目标字提取（"我想学'药'字"→药；支持引号包裹与 学X字 正则）。review-11 P2-2。 */
+    private fun extractTargetChar(text: String): String? {
+        val quoted = Regex("['\"]([^'\"]{1,2})['\"]").find(text)
+        if (quoted != null) return quoted.groupValues[1]
+        return Regex("学(.{1,2})字").find(text)?.groupValues?.get(1)
+    }
 
     /** 复习判题证据标记（review-09 P1-4）：判题（tapped）或 record_result（assess/reinforce）后置位，
      *  ASSESS→REINFORCE 门禁要求有证据——用户不能从 recall 无证据点到 next。 */

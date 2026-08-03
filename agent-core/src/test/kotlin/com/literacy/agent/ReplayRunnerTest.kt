@@ -271,4 +271,36 @@ class ReplayRunnerTest {
         assertEquals(0, char.streakSuccess(com.literacy.agent.model.Dimension.RECOGNIZE))
         assertEquals(0, char.streakErrors(com.literacy.agent.model.Dimension.RECOGNIZE))
     }
-}
+
+    // ---- review-11 P2-2：主动意图目标语义 ----
+
+    @Test
+    fun `REQUEST_NEW_CHAR 解析文本目标字优先于选择器`() {
+        val runner = ReplayRunner().startSession("家")
+        var selectorCalled = false
+        runner.nextCharSelector = { selectorCalled = true; "药" }
+        runner.voice(VoiceIntent.REQUEST_NEW_CHAR, "我想学'药'字")
+        assertEquals("药", runner.state.char, "文本中明确的目标字应优先")
+        assertFalse(selectorCalled, "有目标字时不调选择器")
+        assertEquals(Phase.INTRODUCE, runner.state.phase)
+    }
+
+    @Test
+    fun `REQUEST_NEW_CHAR 无目标字时回退选择器`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.nextCharSelector = { "药" }
+        runner.voice(VoiceIntent.REQUEST_NEW_CHAR, "我们换一个字吧")
+        assertEquals("药", runner.state.char)
+        assertEquals(Phase.INTRODUCE, runner.state.phase)
+    }
+
+    @Test
+    fun `SWITCH_PATH 重复不写字确定映射 READ_ONLY 不回书写路径`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.voice(VoiceIntent.SWITCH_PATH, "我今天不写字了")
+        assertEquals(LearningPath.READ_ONLY, runner.state.learningPath)
+        // 重复"不写字"不得回到书写路径（三态循环已废弃）
+        runner.voice(VoiceIntent.SWITCH_PATH, "不写字")
+        assertEquals(LearningPath.READ_ONLY, runner.state.learningPath)
+    }
+

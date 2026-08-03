@@ -277,7 +277,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEye(cx: Float, 
 fun MascotBall(
     mascot: Mascot,
     listening: Boolean,
-    bubbleText: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -316,27 +315,6 @@ fun MascotBall(
             .clickable(enabled = true) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        // 气泡提示（角色上方）
-        if (bubbleText != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.medium,
-                shadowElevation = 6.dp,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = (-4).dp)
-                    .widthIn(max = 210.dp),
-            ) {
-                Text(
-                    bubbleText,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                )
-            }
-        }
         // 角色本体
         MascotAvatar(variant = v, listening = listening, size = 62.dp)
         // 录音状态：右上角红点

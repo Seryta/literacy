@@ -280,40 +280,62 @@ fun HomeScreen(
         // 底部安全区：悬浮吉祥物 + 系统导航条留位
         Spacer(Modifier.height(96.dp))
 
-        // ── debug：语音包下载验证入口（临时）──
-        if (com.literacy.app.BuildConfig.DEBUG) {
+        // ── 语音包状态卡（正式）：模型未就绪时引导下载（女声+离线识别）──
+        val modelManager = com.literacy.app.ui.voice.VoiceHub.modelManager
+        if (!modelManager.ttsReady() || !modelManager.sttReady()) {
             var dlProgress by remember { mutableStateOf(-1) }
-            var dlMsg by remember { mutableStateOf("") }
+            var dlError by remember { mutableStateOf<String?>(null) }
+            var dlDone by remember { mutableStateOf(false) }
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                shape = MaterialTheme.shapes.medium,
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("开发：语音包下载测试", style = MaterialTheme.typography.titleSmall)
-                    Text("TTS就绪=${com.literacy.app.ui.voice.VoiceHub.modelManager.ttsReady()} STT就绪=${com.literacy.app.ui.voice.VoiceHub.modelManager.sttReady()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (dlProgress >= 0) {
-                        Text("下载 $dlProgress%", style = MaterialTheme.typography.bodySmall)
-                    }
-                    dlMsg.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                    Button(
-                        onClick = {
-                            kotlinx.coroutines.MainScope().launch {
-                                try {
-                                    val mm = com.literacy.app.ui.voice.VoiceHub.modelManager
-                                    if (!mm.ttsReady()) mm.downloadTts { dlProgress = it }
-                                    if (!mm.sttReady()) mm.downloadStt { dlProgress = it }
-                                    com.literacy.app.ui.voice.VoiceHub.offline.initTts()
-                                    com.literacy.app.ui.voice.VoiceHub.offline.initStt()
-                                    dlMsg = "下载完成 TTS=${com.literacy.app.ui.voice.VoiceHub.offlineTtsReady} STT=${com.literacy.app.ui.voice.VoiceHub.offlineSttReady}"
-                                } catch (e: Exception) {
-                                    dlMsg = "失败: ${e.message}"
+                Column(Modifier.padding(LiteracyDimens.CardPadding)) {
+                    Text("语音老师准备", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "下载语音包后，女声朗读和语音识别完全离线、更清楚。\n约 210MB，建议连 Wi-Fi 下载。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (dlProgress >= 0 && !dlDone) {
+                        LinearProgressIndicator(
+                            progress = { dlProgress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text("下载中… $dlProgress%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    } else if (dlDone) {
+                        Text("✓ 语音包已就绪", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    } else {
+                        val scope = rememberCoroutineScope()
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    dlError = null
+                                    try {
+                                        if (!modelManager.ttsReady()) modelManager.downloadTts { dlProgress = it / 2 }
+                                        if (!modelManager.sttReady()) modelManager.downloadStt { dlProgress = 50 + it / 2 }
+                                        com.literacy.app.ui.voice.VoiceHub.offline.initTts()
+                                        com.literacy.app.ui.voice.VoiceHub.offline.initStt()
+                                        dlDone = true
+                                    } catch (e: Exception) {
+                                        dlError = "请检查网络后重试"
+                                        dlProgress = -1
+                                        android.widget.Toast.makeText(context, "语音包下载失败，请检查网络", android.widget.Toast.LENGTH_LONG).show()
+                                    }
                                 }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                    ) { Text("下载语音包（mock）") }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = MaterialTheme.shapes.large,
+                        ) { Text("下载语音包", fontSize = 18.sp) }
+                    }
+                    dlError?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text("下载失败：$it（稍后再试，或用系统语音）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }

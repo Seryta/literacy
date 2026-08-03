@@ -82,8 +82,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     val scope = rememberCoroutineScope()
     // 语音转写结果按当前页面的处理器分发（各分支重组时设置）
     val voiceHandler = remember { mutableStateOf<(String) -> Unit>({}) }
-    // 吉祥物气泡提示（各分支重组时设置）
-    val bubbleText = remember { mutableStateOf<String?>(null) }
     // 麦克风运行时权限（引导/学习自动语音需要；拒绝则回落手动按钮）
     var audioGranted by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -138,7 +136,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                 MascotBall(
                     mascot = mascot,
                     listening = listening,
-                    bubbleText = bubbleText.value,
                     onClick = {
                         // 自动监听页（学习/引导）：重启监听让用户立即说话；其他页：一次性识别
                         val restart = autoListenRestart.value
@@ -149,7 +146,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                             val ok = speech.start(
                                 callback = { outcome ->
                                     listening = false
-                                    bubbleText.value = null
                                     when (outcome) {
                                         is SpeechInputManager.SpeechOutcome.Text -> voiceHandler.value(outcome.text)
                                         is SpeechInputManager.SpeechOutcome.Error ->
@@ -173,7 +169,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     factory = OnboardingViewModelFactory(settings, store),
                 )
                 voiceHandler.value = { text -> obVm.handleVoice(text) }
-                bubbleText.value = null
                 // 引导阶段自动语音：进来就持续听，无需点击（连续监听模式）
                 // 先请求麦克风权限，授权后自动启动监听
                 LaunchedEffect(Unit) {
@@ -290,7 +285,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         kotlinx.coroutines.delay(1500)
                         if (screen == Screen.HOME && !settings.initialGreetDone) {
                             settings.initialGreetDone = true
-                            bubbleText.value = "今天想学什么？直接说，比如：我想学家"
                             homeTts.speak("今天想学什么？直接告诉我，比如：我想学家。")
                         }
                     }
@@ -313,7 +307,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                 }
                 Screen.PROFILE -> {
                     voiceHandler.value = {}   // 建档页不接收语音导航
-                    bubbleText.value = null
                     ProfileScreen(
                         store = store,
                         hanzi = hanzi,
@@ -325,7 +318,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     voiceHandler.value = {
                         if (it.contains("返回") || it.contains("回去") || it.contains("退出")) screen = Screen.HOME
                     }
-                    bubbleText.value = null
                     SettingsScreen(
                         settings = settings,
                         onBack = { screen = Screen.HOME },
@@ -342,14 +334,12 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     voiceHandler.value = {
                         if (it.contains("返回") || it.contains("回去")) screen = Screen.SETTINGS
                     }
-                    bubbleText.value = null
                     AboutScreen(onBack = { screen = Screen.SETTINGS })
                 }
                 Screen.MASCOT -> {
                     voiceHandler.value = {
                         if (it.contains("返回") || it.contains("回去")) screen = Screen.SETTINGS
                     }
-                    bubbleText.value = null
                     MascotGalleryScreen(
                         current = mascot,
                         onSelect = {
@@ -391,13 +381,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         listening = ok
                     }
                     // 吉祥物气泡：跟随时机性提示（loading/paused/阶段）
-                    val ui = vm.ui   // Compose state，重组自动追踪
-                    bubbleText.value = when {
-                        ui.loading -> "老师想想…"
-                        ui.paused -> "点我说「继续」"
-                        ui.sessionEnded -> "学完啦，点我说「结束」"
-                        else -> null
-                    }
                     LaunchedEffect(Unit) {
                         vm.bindTts(context.applicationContext)
                         if (vm.ui.char != learnChar) vm.startLearning(learnChar)

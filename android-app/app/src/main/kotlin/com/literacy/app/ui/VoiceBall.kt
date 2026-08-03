@@ -158,6 +158,9 @@ object VoiceCommandParser {
         data class LearnChar(val c: String) : Action
         data object OpenSettings : Action
         data object OpenProfile : Action
+        data object OpenNameLearning : Action     // 学我的名字（默认路径）
+        data object OpenSearchChar : Action       // 想学一个字（搜索/输入卡片）
+        data object OpenReview : Action           // 复习
         data object Unknown : Action
     }
 
@@ -165,7 +168,11 @@ object VoiceCommandParser {
         val t = text.trim()
         return when {
             t.contains("设置") -> Action.OpenSettings
-            t.contains("建档") || t.contains("名字") || t.contains("教我写") -> Action.OpenProfile
+            // 名字学习优先于建档（"学我的名字"不能被"名字"误判为建档）
+            t.contains("学我的名字") || t.contains("学名字") || t.contains("我的名字") || t.contains("学我的字") -> Action.OpenNameLearning
+            t.contains("建档") || t.contains("教我写") -> Action.OpenProfile
+            t.contains("复习") || t.contains("温习") -> Action.OpenReview
+            t.contains("想学一个字") || t.contains("学个字") || t.contains("要学字") || t.contains("想学字") || t.contains("学一个") -> Action.OpenSearchChar
             // 学X字 / 我想学X / 复习X —— 提取目标汉字
             else -> {
                 // 否定/结束句不触发学字导航（"我不学了"取"了"字会误导航）

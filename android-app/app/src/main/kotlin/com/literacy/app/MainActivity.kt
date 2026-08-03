@@ -229,11 +229,24 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                             com.literacy.agent.learning.SessionLifecycle(s).buildReviewQueue(java.time.LocalDate.now()).size
                         }
                     }
-                    // 首页语音命令：设置 / 建档 / 学X字（语音控制界面操作）
+                    var searchSignal by remember { mutableStateOf(0) }   // 语音"想学一个字"→ 搜索卡展开信号
+                    // 首页语音命令：学我的名字 / 想学一个字 / 复习 / 设置 / 建档 / 学X字
                     val homeOnText: (String) -> Unit = { text ->
                         when (val action = VoiceCommandParser.parse(text)) {
                             is VoiceCommandParser.Action.OpenSettings -> screen = Screen.SETTINGS
                             is VoiceCommandParser.Action.OpenProfile -> screen = Screen.PROFILE
+                            is VoiceCommandParser.Action.OpenNameLearning -> {
+                                val first = namePlan?.targetChars?.firstOrNull() ?: "家"
+                                learnChar = first
+                                enterCount++
+                                screen = Screen.LEARN
+                            }
+                            is VoiceCommandParser.Action.OpenSearchChar -> searchSignal++   // 展开搜索卡（语音问"想学什么字"）
+                            is VoiceCommandParser.Action.OpenReview -> {
+                                learnChar = "${namePlan?.targetChars?.firstOrNull() ?: "家"}:review"
+                                enterCount++
+                                screen = Screen.LEARN
+                            }
                             is VoiceCommandParser.Action.LearnChar -> {
                                 if (hanzi.find(action.c) != null) {
                                     learnChar = action.c
@@ -285,6 +298,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         reviewQueueSize = reviewQueueSize,
                         mascot = mascot,
                         displayName = settings.displayName,
+                        searchSignal = searchSignal,
                         onOpenSettings = { screen = Screen.SETTINGS },
                         onOpenProfile = { screen = Screen.PROFILE },
                         onStartLearning = { char ->

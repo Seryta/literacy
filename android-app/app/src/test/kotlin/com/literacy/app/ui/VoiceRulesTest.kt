@@ -66,7 +66,9 @@ class VoiceRulesTest {
         assertEquals(VoiceCommandParser.Action.OpenSettings, VoiceCommandParser.parse("打开设置"))
         assertEquals(VoiceCommandParser.Action.OpenProfile, VoiceCommandParser.parse("我要建档"))
         assertEquals(VoiceCommandParser.Action.LearnChar("家"), VoiceCommandParser.parse("我想学家"))
-        assertEquals(VoiceCommandParser.Action.LearnChar("个"), VoiceCommandParser.parse("学个字"))
+        assertEquals(VoiceCommandParser.Action.OpenSearchChar, VoiceCommandParser.parse("学个字"))   // 不指定具体字 → 搜索卡
+        assertEquals(VoiceCommandParser.Action.OpenNameLearning, VoiceCommandParser.parse("学我的名字"))
+        assertEquals(VoiceCommandParser.Action.OpenReview, VoiceCommandParser.parse("我要复习"))
     }
 
     @Test

@@ -37,6 +37,7 @@ data class LearnUiState(
     val mode: String = "learning",       // learning / review
     val reviewStage: String? = null,      // 复习阶段 recall/assess/reinforce/next
     val uiTools: List<com.literacy.agent.model.ToolCall> = emptyList(),   // P1-5：模型声明的 UI 工具（含参数）
+    val exercise: com.literacy.app.agent.AgentOrchestrator.LocalExercise? = null,   // review-11 P1-1.4：本地选择题真值（渲染源）
 )
 
 /** 学习会话 ViewModel：驱动 AgentOrchestrator，暴露 UI 状态。
@@ -230,6 +231,7 @@ class LearnViewModel(
             mode = s.mode.name.lowercase(),
             reviewStage = s.reviewStage?.name?.lowercase(),
             uiTools = orchestrator.recentUiTools,   // P1-5：UI 工具渲染源
+            exercise = orchestrator.currentExercise,   // review-11 P1-1.4：本地选择题真值（渲染源）
         )
         // review-09 P1-5 + review-10 P1-10：clear_grid 按「本次新增工具」消费（不再只看最后一个——
         // clear_grid → show_character 组合此前不触发）；新出现的 clear_grid 都触发清空

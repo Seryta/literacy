@@ -178,28 +178,27 @@ fun LearnScreen(
             }
         }
 
-        // review-09 P1-5：模型声明的 UI 工具渲染（show_options 选项按钮 / show_sentence 句子 / highlight_stroke 当前笔）
+        // review-11 P1-1.4：选择题渲染本地真值（AgentOrchestrator 从 show_options 执行提取：
+        // 选项 + 题目 id + 正确答案=当前字）——不直接信模型 show_options 参数渲染选项；
+        // 作答后 currentExercise 清空（一次性消费），answerLocked 兜底禁用
+        ui.exercise?.let { ex ->
+            Text("请选择正确答案：", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ex.options.forEach { opt ->
+                // review-10 P1-5：选项一次性消费（answered 后旧题不可重复点）；本地判题
+                OutlinedButton(
+                    onClick = {
+                        answerLocked = true   // 本地判题在 AgentOrchestrator（correct=目标字比较）
+                        viewModel.onButton(opt)
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    enabled = !answerLocked && !ui.sessionEnded && !ui.paused,
+                ) { Text(opt) }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        // review-09 P1-5：模型声明的 UI 工具渲染（show_sentence 句子 / highlight_stroke 当前笔）
         ui.uiTools.takeLast(3).forEach { tool ->
             when (tool.name) {
-                "show_options" -> {
-                    val opts = (tool.arguments["options"] as? List<*>)?.mapNotNull { it?.toString() }
-                        ?: (tool.arguments["options"] as? String)?.split(",")?.map { it.trim() }
-                    if (!opts.isNullOrEmpty()) {
-                        Text("请选择正确答案：", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        opts.forEach { opt ->
-                            // review-10 P1-5：选项一次性消费（answered 后旧题不可重复点）；本地判题
-                            OutlinedButton(
-                                onClick = {
-                                    answerLocked = true   // 本地判题在 AgentOrchestrator（correct=目标字比较）
-                                    viewModel.onButton(opt)
-                                },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                enabled = !answerLocked && !ui.sessionEnded && !ui.paused,
-                            ) { Text(opt) }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                    }
-                }
                 "show_sentence" -> {
                     // review-10 P1-5：参数字段兼容（text/sentence/content）
                     (tool.arguments["text"] ?: tool.arguments["sentence"] ?: tool.arguments["content"])

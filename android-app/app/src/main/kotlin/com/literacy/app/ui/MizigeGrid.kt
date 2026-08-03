@@ -7,7 +7,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -37,10 +36,10 @@ fun MizigeGrid(
     enabled: Boolean = true,   // P1-14：loading/paused/ended 时禁绘制
     modifier: Modifier = Modifier,
 ) {
-    val gridColor = Color(0xFF999999)
-    val strokeColor = Color(0xFF333333)
-    val guideColor = Color(0xFFCCCCCC)
-    val userColor = Color(0xFF1565C0)
+    val gridColor = com.literacy.app.ui.theme.GridLine
+    val strokeColor = com.literacy.app.ui.theme.GridStroke
+    val guideColor = com.literacy.app.ui.theme.GridGuide
+    val userColor = com.literacy.app.ui.theme.GridUserStroke
     val density = LocalDensity.current
     // review-09 P1-2：输入逆变换用实际画布尺寸（onSizeChanged 记录），不再固定 300.dp——
     // 绘制侧用 size.minDimension，两者不一致会导致评估坐标与显示错位

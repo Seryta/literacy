@@ -17,10 +17,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.literacy.agent.model.Phase
+import com.literacy.app.ui.theme.LiteracyDimens
+
+/** 阶段中文映射（UI 层，不动 agent-core 的英文 display）——适老用户看不懂英文阶段名。 */
+private fun phaseLabelZh(phase: String): String = when (phase) {
+    Phase.INTRODUCE.display -> "认识这个字"
+    Phase.RECOGNIZE.display -> "认一认"
+    Phase.DEMONSTRATE.display -> "看老师写"
+    Phase.GUIDED_WRITE.display -> "跟着写"
+    Phase.INDEPENDENT_WRITE.display -> "自己写"
+    Phase.EXPLAIN.display -> "说一说"
+    Phase.SENTENCE.display -> "用一用"
+    Phase.RECORD.display -> "记一记"
+    Phase.DECIDE.display -> "下一步"
+    else -> phase
+}
 
 /**
  * 学习主界面：当前字 + 米字格 + 教学语 + 输入与操作按钮。
- * 第一版以文本框模拟语音输入（STT 接入后替换）。
+ * 适老化：大字号、2×2 大操作按钮、教学语卡片化；交互逻辑不变。
  */
 @Composable
 fun LearnScreen(
@@ -39,22 +54,44 @@ fun LearnScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = LiteracyDimens.ScreenPadding)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 顶部：返回 + 当前字 + 拼音 + 阶段
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("← 首页") }
+        // ── 顶部：返回 + 阶段标签 ──
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier.height(56.dp),
+                shape = MaterialTheme.shapes.medium,
+            ) { Text("← 首页", fontSize = 17.sp) }
             Spacer(Modifier.weight(1f))
-            if (ui.providerFailed) {
-                Text(
-                    "⚠ AI 未连接（检查设置中的 API Key）",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
         }
+        Spacer(Modifier.height(4.dp))
+
+        // 阶段胶囊标签（复习模式不显示答案字，标签不含答案）
+        val phaseLabel = when {
+            ui.mode == "review" -> "复习 · ${ui.reviewStage ?: "-"}"
+            else -> phaseLabelZh(ui.phase)
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = MaterialTheme.shapes.extraSmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        ) {
+            Text(
+                phaseLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+
         // P1-4 + review-09 P1-3：独立写（无提示）与复习检测阶段（RECALL 提取练习 / ASSESS 判题）
         // 都不显示答案（字形/拼音/结构）——RECALL 隐藏后标题不得含 char，ASSESS 同样隐藏
         var answerLocked by remember(ui.uiTools.size) { mutableStateOf(false) }   // review-10 P1-5：旧题一次性消费
@@ -74,14 +111,14 @@ fun LearnScreen(
                     ui.pinyin.ifEmpty { null },
                     ui.decomposition.ifEmpty { null },
                 ).joinToString("  "),
-                fontSize = 18.sp,
+                fontSize = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
             text = when {
                 ui.mode == "review" -> "复习模式（${ui.reviewStage ?: "-"}）"   // review-09 P1-3：标题不含答案字
-                else -> "阶段：${ui.phase}　提示等级：L${ui.promptLevel}　笔画：${ui.strokeCount}"
+                else -> "笔画：${ui.strokeCount}"
             },
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -119,51 +156,63 @@ fun LearnScreen(
         if (ui.phase == Phase.INDEPENDENT_WRITE.display && !ui.sessionEnded) {
             Text(
                 "已画 ${strokeCount}/${ui.strokeCount} 笔，画完点完成",
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
                 onClick = { viewModel.onCompleteWriting(drawnLibrary) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(LiteracyDimens.ActionButtonHeight),
+                shape = MaterialTheme.shapes.large,
                 enabled = strokeCount > 0,
-            ) { Text("完成书写（$strokeCount 笔）") }
+            ) { Text("完成书写（$strokeCount 笔）", fontSize = 19.sp) }
         }
 
         // 教学语（LLM text，TTS 已自动朗读；固定高度区域，任何阶段稳定显示，内容多可滚动）
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = ui.text.ifEmpty { "（等待老师说话…）" },
-            fontSize = 17.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 60.dp, max = 120.dp)
-                .verticalScroll(rememberScrollState()),
-        )
+        Spacer(Modifier.height(10.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Text(
+                text = ui.text.ifEmpty { "（等待老师说话…）" },
+                fontSize = 18.sp,
+                lineHeight = 26.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp, max = 120.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(LiteracyDimens.CardPadding),
+            )
+        }
         if (ui.listening) {
-            Text("🎙 老师正在听…", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+            Text("🎙 老师正在听…", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
         }
         if (ui.loading) {
-            Text("⏳ 老师思考中…", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+            Text("⏳ 老师思考中…", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
         }
         if (ui.paused) {
-            Text("⏸ 已暂停（其他按钮不可用）", fontSize = 14.sp, color = MaterialTheme.colorScheme.tertiary)
-            OutlinedButton(
-                onClick = { viewModel.onButton("resume") },
-                modifier = Modifier.padding(top = 8.dp),
-            ) { Text("继续") }
+            Text("⏸ 已暂停（其他按钮不可用）", fontSize = 15.sp, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 6.dp))
+        }
+        if (ui.providerFailed) {
+            // 技术性报错不暴露给用户：温和提示，引导去设置页（家人协助）
+            Text("老师没连上，请让家人帮忙看看设置", fontSize = 15.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
         }
 
         // 输入区（第一版以文本框模拟语音；P1-14：loading/paused 时禁用防并发乱序）
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = input,
             onValueChange = { input = it },
-            label = { Text("说点什么（模拟语音）") },
+            label = { Text("和老师说句话") },
             singleLine = true,
             enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // review-09 P1-12：结束后禁输入
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
@@ -172,13 +221,22 @@ fun LearnScreen(
                     input = ""
                     focusManager.clearFocus()
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.medium,
                 enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // review-09 P1-12
-            ) { Text("发送") }
+            ) { Text("发送", fontSize = 18.sp) }
             // 开发模式：模拟认读（绕过中文输入限制，仅 debug 构建）
             if (com.literacy.app.BuildConfig.DEBUG && ui.phase == Phase.RECOGNIZE.display) {
-                OutlinedButton(onClick = { viewModel.onSimulatedRecognition(true) }) { Text("✓认对") }
-                OutlinedButton(onClick = { viewModel.onSimulatedRecognition(false) }) { Text("✗认错") }
+                OutlinedButton(
+                    onClick = { viewModel.onSimulatedRecognition(true) },
+                    modifier = Modifier.height(52.dp),
+                ) { Text("✓认对") }
+                OutlinedButton(
+                    onClick = { viewModel.onSimulatedRecognition(false) },
+                    modifier = Modifier.height(52.dp),
+                ) { Text("✗认错") }
             }
         }
 
@@ -209,8 +267,13 @@ fun LearnScreen(
                     (tool.arguments["sentence_text"]
                         ?: tool.arguments["text"] ?: tool.arguments["sentence"] ?: tool.arguments["content"])
                         ?.toString()?.takeIf { it.isNotBlank() }?.let { sentence ->
-                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                            Text(sentence, modifier = Modifier.padding(10.dp), fontSize = 16.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Text(sentence, modifier = Modifier.padding(12.dp), fontSize = 18.sp, lineHeight = 26.sp)
                         }
                         Spacer(Modifier.height(4.dp))
                     }
@@ -237,29 +300,83 @@ fun LearnScreen(
                 }
                 "highlight_stroke" -> {
                     tool.arguments["stroke"]?.toString()?.takeIf { it.isNotBlank() }?.let { n ->
-                        Text("请书写第 $n 笔", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("请书写第 $n 笔", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(2.dp))
                     }
                 }
             }
         }
 
-        // 操作按钮（复习模式：next / end；学习模式：帮助/跳过/暂停/结束）
-        Spacer(Modifier.height(8.dp))
+        // 操作按钮：学习模式 2×2 大网格；复习模式 2+1（大触控目标）
+        Spacer(Modifier.height(14.dp))
         if (ui.mode == "review") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { viewModel.onButton("review_stage") }, modifier = Modifier.weight(1f), enabled = !ui.sessionEnded && !ui.paused && ui.reviewStage != "next") { Text("下一阶段") }
-                OutlinedButton(onClick = { viewModel.onButton("next") }, modifier = Modifier.weight(1f), enabled = !ui.sessionEnded && !ui.paused) { Text("下一复习字") }
-                OutlinedButton(onClick = { viewModel.onButton("end") }, modifier = Modifier.weight(1f), enabled = !ui.sessionEnded) { Text("结束") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { viewModel.onButton("review_stage") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ui.sessionEnded && !ui.paused && ui.reviewStage != "next",
+                ) { Text("下一阶段", fontSize = 18.sp) }
+                OutlinedButton(
+                    onClick = { viewModel.onButton("end") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ui.sessionEnded,
+                ) { Text("结束", fontSize = 18.sp) }
             }
+            OutlinedButton(
+                onClick = { viewModel.onButton("next") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(LiteracyDimens.ActionButtonHeight),
+                shape = MaterialTheme.shapes.large,
+                enabled = !ui.sessionEnded && !ui.paused,
+            ) { Text("下一复习字", fontSize = 18.sp) }
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val ended = ui.sessionEnded
-                OutlinedButton(onClick = { viewModel.onButton("help") }, modifier = Modifier.weight(1f), enabled = !ended && !ui.paused) { Text("帮助") }
-                OutlinedButton(onClick = { viewModel.onButton("skip") }, modifier = Modifier.weight(1f), enabled = !ended && !ui.paused) { Text("跳过") }
-                OutlinedButton(onClick = { viewModel.onButton("pause") }, modifier = Modifier.weight(1f), enabled = !ended && !ui.paused) { Text("暂停") }
-                OutlinedButton(onClick = { viewModel.onButton("end") }, modifier = Modifier.weight(1f), enabled = !ended) { Text("结束") }
+                OutlinedButton(
+                    onClick = { viewModel.onButton("help") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ended && !ui.paused,
+                ) { Text("帮助", fontSize = 18.sp) }
+                OutlinedButton(
+                    onClick = { viewModel.onButton("skip") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ended && !ui.paused,
+                ) { Text("跳过", fontSize = 18.sp) }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val ended = ui.sessionEnded
+                OutlinedButton(
+                    onClick = { viewModel.onButton(if (ui.paused) "resume" else "pause") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ended,
+                ) { Text(if (ui.paused) "继续" else "暂停", fontSize = 18.sp) }
+                OutlinedButton(
+                    onClick = { viewModel.onButton("end") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(LiteracyDimens.ActionButtonHeight),
+                    shape = MaterialTheme.shapes.large,
+                    enabled = !ended,
+                ) { Text("结束", fontSize = 18.sp) }
             }
         }
+        Spacer(Modifier.height(16.dp))
     }
 }

@@ -3,7 +3,6 @@ package com.literacy.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -19,6 +18,7 @@ import com.literacy.app.ui.LearnViewModel
 import com.literacy.app.ui.LearnViewModelFactory
 import com.literacy.app.ui.ProfileScreen
 import com.literacy.app.ui.SettingsScreen
+import com.literacy.app.ui.theme.LiteracyTheme
 
 /** 顶层导航：首页（选字）→ 建档 / 学习 / 设置。 */
 private enum class Screen { HOME, SETTINGS, LEARN, PROFILE }
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         store = RoomStore(AppDatabase.get(this))
 
         setContent {
-            MaterialTheme {
+            LiteracyTheme {
                 Surface {
                     LiteracyApp(settings, hanzi, store)
                 }
@@ -90,6 +90,11 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
             onBack = { screen = Screen.HOME },
+            onDebugStartLearning = { char ->
+                learnChar = char
+                enterCount++   // 与首页入口一致：每次进入新 VM
+                screen = Screen.LEARN
+            },
         )
         Screen.LEARN -> {
             // 换字时重建会话（review-05 P2-2：key 不含 apiKey 敏感信息）

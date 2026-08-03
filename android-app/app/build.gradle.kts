@@ -35,7 +35,8 @@ android {
         release {
             isMinifyEnabled = false
             // release 签名：本地生成 keystore/release.keystore（随机密码，gitignore，不进仓库）。
-            // review-10 P1-13：签名材料缺失时 release 构建直接失败——不产出 unsigned APK 当发布产物
+            // review-11 P1-3：签名材料缺失时所有 Release 打包任务（assemble/bundle/package 前缀）
+            // 统一在产出前失败——不产 unsigned APK 也不产 unsigned AAB（见 android 块末尾门禁）
             signingConfig = if (file("../keystore/release.keystore").exists()) {
                 signingConfigs.create("release") {
                     // 简单 key=value 解析（避免 java.util.Properties 与 Java 插件扩展命名冲突）
@@ -49,14 +50,6 @@ android {
                     keyPassword = storePassword   // PKCS12 单密码：key 密码必须等于 store 密码
                 }
             } else {
-                tasks.configureEach {
-                    if (name.startsWith("assemble") && name.contains("Release", ignoreCase = true)) {
-                        doFirst { throw GradleException(
-                            "release 签名缺失：需要 android-app/keystore/release.keystore + release.properties。\n" +
-                            "生成：keytool -genkeypair -keystore android-app/keystore/release.keystore ...（密码随机，不进 git）")
-                        }
-                    }
-                }
                 null
             }
         }
@@ -86,6 +79,37 @@ android {
     // MigrationTestHelper 按 databaseClass/version.json 读取（room-testing 依赖）
     sourceSets["androidTest"].apply {
         assets.srcDirs("$projectDir/schemas")
+    }
+
+    // review-11 P1-3：release 签名门禁——挂在所有 Release 打包任务（assemble/bundle/package 前缀）
+    // 的 doFirst，产出前检查 keystore 文件 + release.properties 密码；缺失即抛异常，
+    // 同时覆盖 assembleRelease（原 review-10 只拦它）与 bundleRelease（产 unsigned AAB 的漏洞）
+    tasks.configureEach {
+        val taskName = name.lowercase()
+        val isReleasePackaging = taskName.contains("release") &&
+            (taskName.startsWith("assemble") || taskName.startsWith("bundle") || taskName.startsWith("package"))
+        if (isReleasePackaging) {
+            doFirst {
+                val ks = file("../keystore/release.keystore")
+                val propsFile = file("../keystore/release.properties")
+                val problems = mutableListOf<String>()
+                if (!ks.exists()) problems.add("缺 keystore/release.keystore")
+                if (!propsFile.exists()) {
+                    problems.add("缺 keystore/release.properties")
+                } else {
+                    val props = propsFile.readLines().mapNotNull { line ->
+                        line.split("=", limit = 2).takeIf { it.size == 2 }
+                    }.associate { it[0] to it[1] }
+                    if (props["storePassword"].isNullOrBlank()) problems.add("release.properties 缺 storePassword")
+                }
+                if (problems.isNotEmpty()) {
+                    throw GradleException(
+                        "release 签名缺失（${problems.joinToString("；")}）：\n" +
+                        "生成：keytool -genkeypair -keystore android-app/keystore/release.keystore -storetype PKCS12 ..." +
+                        "（随机密码写 release.properties，两者均不进 git）")
+                }
+            }
+        }
     }
 }
 

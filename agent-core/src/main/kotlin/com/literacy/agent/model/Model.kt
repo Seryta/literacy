@@ -154,6 +154,7 @@ data class AttemptContext(
     val score: Double? = null,
     val dimension: Dimension? = null,
     val exerciseType: String? = null,
+    val promptLevel: Int? = null,   // review-11 P1-1.2：本地绑定的提示等级（裁决权威，模型字段仅落库展示）
     val issues: List<String> = emptyList(),   // review-10 P1-1：本次尝试的本地评估问题（绑定当次，不读上一笔）
 )
 

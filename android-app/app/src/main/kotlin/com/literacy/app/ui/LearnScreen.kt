@@ -197,11 +197,17 @@ fun LearnScreen(
             Text("⏸ 已暂停（其他按钮不可用）", fontSize = 15.sp, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 6.dp))
         }
         if (ui.providerFailed) {
-            // 技术性报错不暴露给用户：温和提示，引导去设置页（家人协助）
-            Text("老师没连上，请让家人帮忙看看设置", fontSize = 15.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
+            // 技术性报错不暴露给用户：温和提示，引导家人协助（不阻塞学习主流程）
+            Text(
+                "语音老师还没准备好，请先让家人帮忙设置",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
 
         // 输入区（第一版以文本框模拟语音；P1-14：loading/paused 时禁用防并发乱序）
+        // 右侧留 76dp：悬浮吉祥物默认位置，避免遮挡输入
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = input,
@@ -211,10 +217,17 @@ fun LearnScreen(
             enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // review-09 P1-12：结束后禁输入
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 76.dp),
             shape = MaterialTheme.shapes.small,
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(end = 76.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Button(
                 onClick = {
                     viewModel.onUserInput(input.trim())

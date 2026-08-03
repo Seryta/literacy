@@ -20,6 +20,8 @@ import com.literacy.app.ui.theme.LiteracyDimens
 fun SettingsScreen(
     settings: AppSettings,
     onBack: () -> Unit,
+    onOpenAbout: () -> Unit,
+    onOpenMascot: () -> Unit,
     onDebugStartLearning: ((String) -> Unit)? = null,   // debug 构建的直达学习入口
 ) {
     var apiKey by remember { mutableStateOf(settings.apiKey) }
@@ -116,7 +118,7 @@ fun SettingsScreen(
             }
         }
 
-        // 开发模式（仅 debug 构建）：直达各阶段，便于测试独立写/复习等流程
+        // 开发模式（仅 debug 构建）：直达各阶段 + 选小伙伴示例，便于测试
         if (com.literacy.app.BuildConfig.DEBUG && onDebugStartLearning != null) {
             Spacer(Modifier.height(20.dp))
             Card(
@@ -127,6 +129,14 @@ fun SettingsScreen(
                 Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                     Text("开发模式（debug 构建）", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onOpenMascot,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = MaterialTheme.shapes.medium,
+                    ) { Text("选一个小伙伴（角色示例）", fontSize = 16.sp) }
+                    Spacer(Modifier.height(6.dp))
                     listOf("guided_write" to "直达跟写", "independent_write" to "直达独立写", "review" to "直达复习").forEach { (stage, label) ->
                         OutlinedButton(
                             onClick = { onDebugStartLearning("家:$stage") },
@@ -138,6 +148,30 @@ fun SettingsScreen(
                         ) { Text("$label「家」", fontSize = 16.sp) }
                     }
                 }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Column(Modifier.padding(LiteracyDimens.CardPadding)) {
+                Text("关于", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "版本 0.1.0 · 开源（MIT）\n第三方数据与许可声明",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onOpenAbout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) { Text("查看许可声明", fontSize = 16.sp) }
             }
         }
 

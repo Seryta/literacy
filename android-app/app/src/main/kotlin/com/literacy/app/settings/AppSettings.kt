@@ -117,6 +117,16 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_DISPLAY_NAME, "") ?: ""
         set(v) = prefs.edit().putString(KEY_DISPLAY_NAME, v).apply()
 
+    /** 选中的陪伴宠物 id（onboarding 引导选择；默认小绿小怪兽）。 */
+    var mascotId: String
+        get() = prefs.getString(KEY_MASCOT_ID, "monster") ?: "monster"
+        set(v) = prefs.edit().putString(KEY_MASCOT_ID, v).apply()
+
+    /** onboarding 引导流程是否已完成（首次进入走引导，完成后置 true）。 */
+    var onboardingDone: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
+        set(v) = prefs.edit().putBoolean(KEY_ONBOARDING_DONE, v).apply()
+
     val hasApiKey: Boolean get() = apiKey.isNotBlank()
 
     companion object {
@@ -126,6 +136,8 @@ class AppSettings(context: Context) {
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_MODEL = "model"
         private const val KEY_DISPLAY_NAME = "display_name"
+        private const val KEY_MASCOT_ID = "mascot_id"
+        private const val KEY_ONBOARDING_DONE = "onboarding_done"
 
         /** 默认 provider：deepseek（pi 同款 openai-completions 格式）。 */
         const val DEFAULT_BASE_URL = "https://api.deepseek.com"

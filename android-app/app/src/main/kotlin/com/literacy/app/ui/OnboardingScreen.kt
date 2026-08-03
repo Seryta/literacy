@@ -117,6 +117,30 @@ fun OnboardingScreen(
             }
         }
 
+        // ── 实时字幕：用户正在说的话（边说边显示，实时对话感）──
+        Spacer(Modifier.height(12.dp))
+        if (viewModel.partialText.isNotBlank()) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "🎤 ${viewModel.partialText}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+        } else if (listening) {
+            Text(
+                "🎤 我在听…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+
         // ── 选宠物（PICK_MASCOT）：4 个卡片横排 ──
         if (ui.step == OnboardingViewModel.Step.PICK_MASCOT || ui.step == OnboardingViewModel.Step.WELCOME) {
             Spacer(Modifier.height(20.dp))

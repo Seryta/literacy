@@ -137,16 +137,20 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                 }
                 LaunchedEffect(audioGranted) {
                     if (audioGranted && !listening) {
-                        val ok = speech.start({ outcome ->
-                            when (outcome) {
-                                is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
-                                // 硬错误（无权限/无音频等）：停止自动监听，回落手动按钮兜底
-                                is SpeechInputManager.SpeechOutcome.Error -> {
-                                    listening = false
-                                    scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                        val ok = speech.start(
+                            callback = { outcome ->
+                                when (outcome) {
+                                    is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
+                                    // 硬错误（无权限/无音频等）：停止自动监听，回落手动按钮兜底
+                                    is SpeechInputManager.SpeechOutcome.Error -> {
+                                        listening = false
+                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                                    }
                                 }
-                            }
-                        }, autoRestart = true)
+                            },
+                            autoRestart = true,
+                            onPartial = { obVm.onPartial(it) },   // 实时字幕：边说边显示
+                        )
                         listening = ok
                     }
                 }

@@ -28,6 +28,7 @@ class SpeechInputManager(context: Context) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
     private var onResult: ((SpeechOutcome) -> Unit)? = null
+    private var onPartial: ((String) -> Unit)? = null   // 实时转写（边说边显示）
     private var autoRestart = false          // 连续监听模式（onboarding 自动听）
     private var cancelled = false
 
@@ -40,16 +41,25 @@ class SpeechInputManager(context: Context) {
      * 开始录音识别；返回是否成功启动（无语音服务时 false）。
      * @param autoRestart 连续监听：静默重启循环（超时/无匹配不打扰用户），
      *        适用于引导等需要"进来就自动听"的场景；硬错误（无权限/无音频）停止循环并回调 Error。
+     * @param onPartial 实时转写回调（onPartialResults）：用户边说边显示；
+     *        也可用于打断——检测到用户开口即回调（UI 层可停 TTS）。
      */
-    fun start(callback: (SpeechOutcome) -> Unit, autoRestart: Boolean = false): Boolean {
+    fun start(
+        callback: (SpeechOutcome) -> Unit,
+        autoRestart: Boolean = false,
+        onPartial: ((String) -> Unit)? = null,
+    ): Boolean {
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) return false
         this.autoRestart = autoRestart
         this.cancelled = false
         onResult = callback
+        this.onPartial = onPartial
         val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(appContext).also { recognizer = it }
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() {
+                // 用户开口：实时转写开始（可用于打断 TTS）
+            }
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
@@ -57,7 +67,7 @@ class SpeechInputManager(context: Context) {
                 when {
                     // 连续监听：用户没说话/没听清 → 静默重启继续听（不打扰）
                     autoRestart && !cancelled && (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) -> {
-                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 500)
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 400)
                     }
                     // 硬错误：停止循环并上报
                     else -> {
@@ -79,16 +89,23 @@ class SpeechInputManager(context: Context) {
                     ?.firstOrNull()
                     ?.takeIf { it.isNotBlank() }
                 if (text != null) {
+                    onPartial?.invoke(text)   // 最终结果也刷新字幕
                     onResult?.invoke(SpeechOutcome.Text(text))
                     // 连续监听：识别完稍停继续听（用户可能继续说）
                     if (autoRestart && !cancelled) {
-                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 900)
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 500)
                     }
                 } else {
                     onError(SpeechRecognizer.ERROR_NO_MATCH)
                 }
             }
-            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {
+                val text = partialResults
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                if (text != null) onPartial?.invoke(text)   // 边说边显示
+            }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {

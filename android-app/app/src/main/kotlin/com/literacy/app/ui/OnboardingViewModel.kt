@@ -41,6 +41,19 @@ class OnboardingViewModel(
     var ui by mutableStateOf(ObState())
         private set
 
+    /** 实时转写字幕（用户边说边显示，onPartialResults 更新）。 */
+    var partialText by mutableStateOf("")
+        private set
+
+    fun onPartial(text: String) {
+        partialText = text
+    }
+
+    /** 对话回合推进时清空旧字幕。 */
+    private fun clearPartial() {
+        partialText = ""
+    }
+
     /** 建档完成回调（UI 层导航）。 */
     var onComplete: ((fullName: String, startNow: Boolean) -> Unit)? = null
 
@@ -55,6 +68,7 @@ class OnboardingViewModel(
 
     // ── 步骤推进 ────────────────────────────────────────────────────
     private fun goPickMascot() {
+        clearPartial()
         ui = ui.copy(
             step = Step.PICK_MASCOT,
             robotText = "你喜欢哪一个？说“第几个”，比如“第一个”；也可以直接点一下下面的卡片。",
@@ -64,6 +78,7 @@ class OnboardingViewModel(
     }
 
     private fun goAskName(reason: String) {
+        clearPartial()
         ui = ui.copy(
             step = Step.ASK_NAME,
             robotText = reason,
@@ -74,6 +89,7 @@ class OnboardingViewModel(
     }
 
     private fun goConfirmName() {
+        clearPartial()
         ui = ui.copy(
             step = Step.CONFIRM_NAME,
             robotText = "我听到的是「${ui.pendingName}」，对吗？说“对”或“不对”。",
@@ -83,6 +99,7 @@ class OnboardingViewModel(
     }
 
     private fun goFallbackInput() {
+        clearPartial()
         ui = ui.copy(
             step = Step.FALLBACK_INPUT,
             robotText = "没关系，我们把名字打出来吧。点下面的框，输入你的名字，然后点“确定”。",
@@ -93,6 +110,7 @@ class OnboardingViewModel(
     }
 
     private fun goGuideStart() {
+        clearPartial()
         ui = ui.copy(
             step = Step.GUIDE_START,
             robotText = "都记住啦！以后我叫你「${ui.pendingName}」好不好？现在我们开始学你的名字，好吗？说“开始”，或者点下面的按钮。",
@@ -103,6 +121,7 @@ class OnboardingViewModel(
 
     // ── 用户输入入口 ────────────────────────────────────────────────
     fun handleVoice(text: String) {
+        clearPartial()   // 回合结束收起实时字幕
         when (ui.step) {
             Step.WELCOME, Step.PICK_MASCOT -> {
                 val idx = pickMascotIndex(text)

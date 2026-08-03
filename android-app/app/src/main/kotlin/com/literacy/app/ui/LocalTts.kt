@@ -29,6 +29,11 @@ class LocalTts(context: Context) {
         }
     }
 
+    /** 停止朗读（用户开口打断时调用——机器人让位给用户说）。 */
+    fun stop() {
+        try { tts?.stop() } catch (e: Exception) {}
+    }
+
     fun shutdown() {
         try { tts?.shutdown() } catch (e: Exception) {}
     }

@@ -234,9 +234,10 @@ class CaseRunner(private val runner: ReplayRunner) {
             runner.store.upsertCharacter(record)
         }
         // review-11 P1-1.2：lesson_state.prompt_level 是本地裁决权威——phase=null（学习模式
-        // SessionStarted 事件 startSession 从 savedLevel 恢复）时也要生效：预写
-        // characters.currentPromptLevel，让两条路径（configureState / startSession）都读到
-        if (s.phase == null && s.mode != Mode.REVIEW && s.promptLevel != 3) {
+        // SessionStarted 事件 startSession 从 savedLevel 恢复）时也要生效：无条件预写
+        // characters.currentPromptLevel（含默认 3——防 characters 前置 currentPromptLevel 覆盖
+        // 用例语义；幂等无害），让两条路径（configureState / startSession）都读到
+        if (s.phase == null && s.mode != Mode.REVIEW) {
             val char = inferChar(case)
             if (char != null) {
                 val rec = runner.store.getCharacter(char)

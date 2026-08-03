@@ -574,7 +574,10 @@ class ReplayRunner(
                     state = state.copy(
                         phase = Phase.RECORD,
                         allowedActions = allowedFor(Phase.RECORD),
-                        attempt = state.attempt?.copy(issues = listOfNotNull(reason))
+                        // review-11 批A：强制 phase="skip"——语音跳过路径 attempt 已绑 phase=recognize，
+                        // 保留原 phase 会让 record_result(skip) 被"phase 与本地事件不符"拒绝
+                        // （且跳过错记为认错失败污染 streak）；copy 保留 dimension/promptLevel 其余字段
+                        attempt = state.attempt?.copy(phase = "skip", issues = listOfNotNull(reason))
                             ?: com.literacy.agent.model.AttemptContext(
                                 phase = "skip", issues = listOfNotNull(reason),
                             ),
@@ -694,9 +697,11 @@ class ReplayRunner(
         // review-10 P1-3：复习轮按当前 reviewStage 校验落库 phase——RECALL/NEXT 无证据不落库；
         // ASSESS 写 assess（判题）；REINFORCE 写 reinforce（再学），且允许补记 assess（判题延迟落库，GT-053）
         if (state.mode == Mode.REVIEW) {
-            // review-11 P1-1.3：复习轮 record_result 必须带本地作答证据（attempt.score != null）——
+            // review-11 P1-1.3 + 批A：复习轮 record_result 必须带本地作答证据——attempt.score != null
+            // （本地判题真值）或 reviewAnswered（tapped 判题已置位；advanceReview 的 beginAttempt 把
+            // attempt 覆盖为 null 后仍成立——正是"ASSESS 已有判题证据"语义，review-10 P1-3 补记容错）——
             // 模型不能在出题回合直接 record_result 打开 reviewAnswered 门禁（无作答即无分数）
-            if (state.attempt?.score == null) {
+            if (state.attempt?.score == null && !reviewAnswered) {
                 rejectedCalls += "record_result"
                 rejectReasons += "record_result: 复习轮缺少本地作答证据（attempt.score）"   // review-11 P1-1.3
                 return
@@ -722,7 +727,9 @@ class ReplayRunner(
         }
         // review-11 P1-7：skip 落库 score=null（协议：跳过无分数，SessionResult.score 可空）；
         // 其余尝试本地权威优先（写评估/判题分数）
-        val effectiveScore = if (isSkip) null else (attempt?.score ?: score ?: 0.0)
+        // review-11 批A：非 skip 的 score==null 已在上方拒绝，attempt?.score ?: score 不可能为 null
+        // （原 ?: 0.0 不可达，删除）——本地权威优先，模型分数兜底
+        val effectiveScore = if (isSkip) null else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
         // 复习轮也按题型推维度（不再恒最弱——听音选字更新识读而非书写），无题型才兜底最弱（事务内）

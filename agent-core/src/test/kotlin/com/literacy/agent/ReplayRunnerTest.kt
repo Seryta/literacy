@@ -199,6 +199,30 @@ class ReplayRunnerTest {
         assertEquals(1, runner.store.getCharacter("家").masteryRecognize)
     }
 
+    // ---- review-11 批A：ASSESS 判题后补记容错（review-10 P1-3 承诺）----
+
+    @Test
+    fun `ASSESS 判题后推进到 REINFORCE 补记 assess 成功（advanceReview 清空 attempt 后的容错）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 本地判题（reviewAnswered 置位）
+        // App 层 advanceReview 的 beginAttempt()（无参）把 attempt 覆盖为 null（新幂等键）——
+        // 模型未当场落库时，补记 assess 的证据只能靠 reviewAnswered
+        runner.configureState(runner.state.copy(attempt = null))
+        runner.advanceReview()   // assess → reinforce（reviewAnswered 放行门禁）
+        // 模型补记判题（GT-053：判题延迟落库）——不得被“attempt.score==null”门禁误拒
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-backfill"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "补记 assess 不得被门禁误拒（review-10 P1-3 容错路径）")
+        assertEquals(1, runner.store.results.size)
+        assertEquals("assess", runner.store.results.single().phase)
+        assertTrue(runner.reviewAnswered)
+    }
+
     // ---- review-11 P1-7：skip 落库 score=null + 跳过原因保存 ----
 
     @Test
@@ -221,4 +245,30 @@ class ReplayRunnerTest {
         assertEquals(listOf("学生主动跳过"), rec.issues, "跳过原因随记录落库")
     }
 
+    @Test
+    fun `语音跳过路径前置 recognize attempt 仍成功落库且不污染 mastery streak`() {
+        val runner = ReplayRunner().startSession("家")
+        // 语音认读失败已绑本地 attempt(phase=recognize, score=0.0)——模型随后决定跳过：
+        // skip_character 必须强制 phase=skip，否则 record_result(skip) 被 phase 与本地事件不符拒绝
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "recognize",
+            score = 0.0,
+            dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+        )))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("skip_character", mapOf("reason" to "学生主动跳过")))))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "skip", "idempotency_key" to "skip-recog"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "skip 不得被 phase 与本地事件不符拒绝")
+        val rec = runner.store.results.single()
+        assertEquals("skip", rec.phase)
+        assertEquals(null, rec.score, "skip 协议要求 score=null")
+        assertEquals(listOf("学生主动跳过"), rec.issues)
+        // 不污染 mastery/streak（skip 不裁决不排期）
+        val char = runner.store.getCharacter("家")
+        assertEquals(0, char.masteryRecognize)
+        assertEquals(0, char.streakSuccess(com.literacy.agent.model.Dimension.RECOGNIZE))
+        assertEquals(0, char.streakErrors(com.literacy.agent.model.Dimension.RECOGNIZE))
+    }
 }

@@ -1,0 +1,11 @@
+reviews/
+agent-core/build/
+agent-core/.gradle/
+agent-core/.kotlin/
+.agent/
+provider-config.json
+android-app/.gradle/
+android-app/.kotlin/
+android-app/app/build/
+android-app/local.properties
+android_components/

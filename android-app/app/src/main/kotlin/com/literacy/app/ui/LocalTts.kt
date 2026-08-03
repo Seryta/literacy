@@ -2,11 +2,12 @@ package com.literacy.app.ui
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import com.literacy.app.ui.voice.VoiceHub
 import java.util.Locale
 
 /**
- * 轻量 TTS 封装（onboarding 引导机器人说话用，独立于 LearnViewModel 内的教学 TTS）。
- * 适老：语速放慢 0.85。TTS 不可用时不阻断（气泡文字始终可见）。
+ * 轻量 TTS 封装（引导机器人/点读用）。
+ * 优先离线中文女声（sherpa-onnx，模型就绪时）；否则回退系统 TTS（语速 0.85 适老）。
  */
 class LocalTts(context: Context) {
     private var tts: TextToSpeech? = null
@@ -22,6 +23,14 @@ class LocalTts(context: Context) {
 
     fun speak(text: String) {
         if (text.isBlank()) return
+        // 优先离线女声
+        if (VoiceHub.offlineTtsReady) {
+            try {
+                if (VoiceHub.offline.speak(text)) return
+            } catch (e: Exception) {
+                // 回退系统
+            }
+        }
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onboarding")
         } catch (e: Exception) {
@@ -31,6 +40,7 @@ class LocalTts(context: Context) {
 
     /** 停止朗读（用户开口打断时调用——机器人让位给用户说）。 */
     fun stop() {
+        VoiceHub.offline.stop()
         try { tts?.stop() } catch (e: Exception) {}
     }
 

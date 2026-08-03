@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.literacy.app.ui.theme.LiteracyDimens
+import com.literacy.app.ui.voice.VoiceHub
 
 /**
  * 首次引导页：活泼机器人对话式建档。
@@ -251,6 +252,52 @@ fun OnboardingScreen(
             )
         }
         Spacer(Modifier.height(8.dp))
+
+        // ── 语音包下载（VOICE_DOWNLOAD）：模型未就绪时引导下载 ──
+        if (ui.step == OnboardingViewModel.Step.VOICE_DOWNLOAD) {
+            Spacer(Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Column(Modifier.padding(LiteracyDimens.CardPadding)) {
+                    Text("语音老师准备就绪", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "下载语音包后，女声朗读和语音识别完全离线、更清楚。\n约 210MB，建议连 Wi-Fi 下载。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (ui.voiceDownloading) {
+                        LinearProgressIndicator(
+                            progress = { ui.voiceDownloadProgress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text("下载中… ${ui.voiceDownloadProgress}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    } else {
+                        Button(
+                            onClick = { viewModel.startVoiceDownload() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = MaterialTheme.shapes.large,
+                        ) { Text("下载语音包（女声朗读 + 离线识别）", fontSize = 17.sp) }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.skipVoiceDownload() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = MaterialTheme.shapes.large,
+                        ) { Text("先跳过（以后可下载）", fontSize = 16.sp) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
 
         Spacer(Modifier.height(20.dp))
         TextButton(onClick = onSkip) { Text("跳过引导（以后再说）", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }

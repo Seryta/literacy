@@ -39,6 +39,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = AppSettings(this)
+        // 离线语音引擎（sherpa-onnx）：模型就绪则后台加载（女声 TTS + 流式 STT）
+        com.literacy.app.ui.voice.VoiceHub.init(this)
         // api_key 加密存储懒创建涉及 Keystore（首次 ~100ms 级）：后台预热，避免首帧/进学习卡顿。
         // 异常不外抛：prewarm 内部降级（Keystore 损坏/定制 ROM 兼容时 api_key 不可用，不 kill 进程）
         Thread { settings.prewarm() }.start()

@@ -16,16 +16,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
+import com.literacy.app.ui.voice.VoiceHub
 
 /**
- * 语音输入：悬浮球 + 系统 SpeechRecognizer（STT）。
- * 链路：悬浮球点击 → 录音 → 系统识别 → 转写文本 → 按当前页面分发。
- * 目标用户不识字：语音是主要交互方式（DESIGN.md §交互模式：主要通过语音与 AI 交互）。
+ * 语音输入：优先离线 STT（sherpa-onnx 流式中文，模型就绪时）；否则系统 SpeechRecognizer。
  */
 
-/** STT 生命周期封装（系统 SpeechRecognizer，中文）。 */
+/** STT 生命周期封装（离线 sherpa 优先，系统 SpeechRecognizer 兜底）。 */
 class SpeechInputManager(context: Context) {
     private val appContext = context.applicationContext
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var onResult: ((SpeechOutcome) -> Unit)? = null
     private var onPartial: ((String) -> Unit)? = null   // 实时转写（边说边显示）
@@ -49,6 +49,18 @@ class SpeechInputManager(context: Context) {
         autoRestart: Boolean = false,
         onPartial: ((String) -> Unit)? = null,
     ): Boolean {
+        // 离线 STT 优先（模型就绪）：流式识别 + 实时字幕（onPartial 由引擎 partial 回调驱动）
+        if (VoiceHub.offlineSttReady) {
+            this.autoRestart = autoRestart
+            this.cancelled = false
+            onResult = callback
+            this.onPartial = onPartial
+            return VoiceHub.offline.startListening(
+                onResultText = { text -> mainHandler.post { callback(SpeechOutcome.Text(text)) } },
+                onPartial = { p -> mainHandler.post { onPartial?.invoke(p) } },
+                autoRestart = autoRestart,
+            )
+        }
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) return false
         this.autoRestart = autoRestart
         this.cancelled = false

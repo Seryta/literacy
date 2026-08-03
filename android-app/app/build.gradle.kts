@@ -34,6 +34,8 @@ android {
         }
         release {
             isMinifyEnabled = false
+            // 离线语音 ABI 裁剪：真机主流架构（arm64-v8a + armeabi-v7a），避免 120MB 全架构 .so
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             // release 签名：本地生成 keystore/release.keystore（随机密码，gitignore，不进仓库）。
             // review-11 P1-3：签名材料缺失时所有 Release 打包任务（assemble/bundle/package 前缀）
             // 统一在产出前失败——不产 unsigned APK 也不产 unsigned AAB（见 android 块末尾门禁）
@@ -142,6 +144,9 @@ dependencies {
 
     // JVM 单元测试（语音解析规则等纯 Kotlin 逻辑）
     testImplementation("junit:junit:4.13.2")
+
+    // 离线语音（sherpa-onnx：本地中文女声 TTS + 流式 STT），AAR 放 libs/（从官方 release 下载）
+    implementation(files("libs/sherpa-onnx-1.13.4.aar"))
 
     // ---- androidTest（instrumented；App 层零测试空白）----
     androidTestImplementation("androidx.room:room-testing:2.6.1")   // MigrationTestHelper

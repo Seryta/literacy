@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.literacy.app.settings.AppSettings
+import com.literacy.app.ui.voice.VoiceHub
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,7 +26,7 @@ class OnboardingViewModel(
     private val store: com.literacy.agent.store.LearningStore,
 ) : ViewModel() {
 
-    enum class Step { WELCOME, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, DONE }
+    enum class Step { WELCOME, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, VOICE_DOWNLOAD, DONE }
 
     data class ObState(
         val step: Step = Step.WELCOME,
@@ -36,6 +37,10 @@ class OnboardingViewModel(
         val showOptions: List<String> = emptyList(),
         val showInput: Boolean = false,
         val inputLabel: String = "",
+        val voiceDownloading: Boolean = false,      // 语音包下载中
+        val voiceDownloadProgress: Int = 0,         // 0..100
+        val voiceDownloadDone: Boolean = false,     // 本次引导内是否已下载完成
+        val voiceModelsReady: Boolean = false,      // 模型是否已就绪（跳过下载步）
     )
 
     var ui by mutableStateOf(ObState())
@@ -163,6 +168,16 @@ class OnboardingViewModel(
                     else -> ui = ui.copy(robotText = "说“开始”我们就开始学你的名字；或者点“等一会”。")
                 }
             }
+            Step.VOICE_DOWNLOAD -> {
+                // 下载步：说"下载"开始下载，说"跳过/以后"跳过（下载中不响应语音）
+                if (!ui.voiceDownloading) {
+                    when {
+                        text.contains("下载") || text.contains("好") || text.contains("要") -> startVoiceDownload()
+                        text.contains("跳过") || text.contains("以后") || text.contains("不") || text.contains("等会") -> skipVoiceDownload()
+                        else -> ui = ui.copy(robotText = "说“下载”就开始，或者点“先跳过”。")
+                    }
+                }
+            }
             Step.DONE -> {}
         }
     }
@@ -226,8 +241,54 @@ class OnboardingViewModel(
                     store.upsertCharacter(rec.copy(source = "name_plan"))
                 }
             }
-            onComplete?.invoke(name, startNow)
+            // 建档完成后：语音模型未就绪 → 引导下载语音包；就绪 → 直接进学习
+            val ready = VoiceHub.modelManager.ttsReady() && VoiceHub.modelManager.sttReady()
+            if (ready) {
+                onComplete?.invoke(name, startNow)
+            } else {
+                ui = ui.copy(step = Step.VOICE_DOWNLOAD, voiceModelsReady = ready)
+                pendingStartNow = startNow
+            }
         }
+    }
+
+    /** 引导下载步：记录完成后是否立即开始学习。 */
+    private var pendingStartNow = true
+
+    /** 开始下载语音包（TTS 女声 + STT 识别，~210MB，建议 Wi-Fi）。 */
+    fun startVoiceDownload() {
+        if (ui.voiceDownloading) return
+        ui = ui.copy(voiceDownloading = true, voiceDownloadProgress = 0)
+        viewModelScope.launch {
+            try {
+                val mm = VoiceHub.modelManager
+                // 分两段下载：TTS 先（女声朗读立即可用），再 STT
+                if (!mm.ttsReady()) mm.downloadTts { p ->
+                    ui = ui.copy(voiceDownloadProgress = p / 2)
+                }
+                if (!mm.sttReady()) mm.downloadStt { p ->
+                    ui = ui.copy(voiceDownloadProgress = 50 + p / 2)
+                }
+                // 加载离线引擎
+                VoiceHub.offline.initTts()
+                VoiceHub.offline.initStt()
+                ui = ui.copy(voiceDownloading = false, voiceDownloadProgress = 100, voiceDownloadDone = true)
+                goAfterVoice()
+            } catch (e: Exception) {
+                ui = ui.copy(voiceDownloading = false)
+                // 下载失败：可重试或跳过（系统兜底）
+            }
+        }
+    }
+
+    /** 跳过语音包下载（系统自带语音兜底，首页可再下载）。 */
+    fun skipVoiceDownload() {
+        if (ui.voiceDownloading) return
+        goAfterVoice()
+    }
+
+    private fun goAfterVoice() {
+        onComplete?.invoke(ui.pendingName, pendingStartNow)
     }
 
     // ── 语音解析（本地规则，不依赖 LLM） ────────────────────────────

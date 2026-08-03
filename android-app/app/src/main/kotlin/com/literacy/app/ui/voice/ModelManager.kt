@@ -17,14 +17,17 @@ import java.net.URL
  * - 模型存 App 私有目录（filesDir）——签名一致的升级安装不清除，不用重下
  */
 object VoiceModels {
-    /** 下载源（可配置；后续可由我方提供专用源） */
-    const val MIRROR_BASE = "https://hf-mirror.com"
+    /** HuggingFace 镜像主机（可配置；后续可由我方提供专用源）。默认国内镜像 hf-mirror.com */
+    const val HF_HOST = "https://hf-mirror.com"
 
-    /** TTS：piper 中文女声（花颜 huayan，温柔风格，质量优先） */
-    const val TTS_REPO = "k2-fsa/sherpa-onnx-piper-zh_CN-huayan-medium"
+    /** 模型 owner（HF 仓库前缀） */
+    const val OWNER = "k2-fsa"
+
+    /** TTS：VITS 中文女声（本地合成，女声） */
+    const val TTS_REPO = "sherpa-onnx-vits-zh-ll"
 
     /** STT：流式中文识别（边说边出字） */
-    const val STT_REPO = "k2-fsa/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23"
+    const val STT_REPO = "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23"
 
     /** 就绪判定：这些文件存在即认为模型可用（TTS 需 espeak-ng-data 目录） */
     val TTS_REQUIRED_FILES = listOf("model.onnx", "tokens.txt")
@@ -37,7 +40,7 @@ class ModelManager(context: Context) {
     val sttDir = File(appContext.filesDir, "voice-models/stt")
 
     // ── 就绪检测 ────────────────────────────────────────────────────
-    fun ttsReady(): Boolean = requiredExist(ttsDir, VoiceModels.TTS_REQUIRED_FILES) && File(ttsDir, "espeak-ng-data").isDirectory
+    fun ttsReady(): Boolean = requiredExist(ttsDir, VoiceModels.TTS_REQUIRED_FILES)
     fun sttReady(): Boolean = requiredExist(sttDir, VoiceModels.STT_REQUIRED_FILES)
 
     private fun requiredExist(dir: File, files: List<String>): Boolean =
@@ -87,7 +90,7 @@ class ModelManager(context: Context) {
         }
 
     private fun fetchTree(repo: String): List<Pair<String, Long>> {
-        val url = URL("${VoiceModels.MIRROR_BASE}/api/models/$repo/tree/main?recursive=true")
+        val url = URL("${VoiceModels.HF_HOST}/api/models/${VoiceModels.OWNER}/$repo/tree/main?recursive=true")
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 30000
@@ -109,7 +112,7 @@ class ModelManager(context: Context) {
     }
 
     private fun downloadFile(repo: String, path: String, dest: File, expectedSize: Long) {
-        val url = URL("${VoiceModels.MIRROR_BASE}/$repo/resolve/main/$path")
+        val url = URL("${VoiceModels.HF_HOST}/${VoiceModels.OWNER}/$repo/resolve/main/$path")
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 60000

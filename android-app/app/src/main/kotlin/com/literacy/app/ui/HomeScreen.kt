@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.literacy.agent.data.HanziDataSource
 import com.literacy.app.ui.theme.LiteracyDimens
+import kotlinx.coroutines.launch
 
 /**
  * 首页：极简卡片式（目标用户不认识字——东西少、每卡只做一件事）。
@@ -278,5 +279,43 @@ fun HomeScreen(
         }
         // 底部安全区：悬浮吉祥物 + 系统导航条留位
         Spacer(Modifier.height(96.dp))
+
+        // ── debug：语音包下载验证入口（临时）──
+        if (com.literacy.app.BuildConfig.DEBUG) {
+            var dlProgress by remember { mutableStateOf(-1) }
+            var dlMsg by remember { mutableStateOf("") }
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("开发：语音包下载测试", style = MaterialTheme.typography.titleSmall)
+                    Text("TTS就绪=${com.literacy.app.ui.voice.VoiceHub.modelManager.ttsReady()} STT就绪=${com.literacy.app.ui.voice.VoiceHub.modelManager.sttReady()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (dlProgress >= 0) {
+                        Text("下载 $dlProgress%", style = MaterialTheme.typography.bodySmall)
+                    }
+                    dlMsg.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Button(
+                        onClick = {
+                            kotlinx.coroutines.MainScope().launch {
+                                try {
+                                    val mm = com.literacy.app.ui.voice.VoiceHub.modelManager
+                                    if (!mm.ttsReady()) mm.downloadTts { dlProgress = it }
+                                    if (!mm.sttReady()) mm.downloadStt { dlProgress = it }
+                                    com.literacy.app.ui.voice.VoiceHub.offline.initTts()
+                                    com.literacy.app.ui.voice.VoiceHub.offline.initStt()
+                                    dlMsg = "下载完成 TTS=${com.literacy.app.ui.voice.VoiceHub.offlineTtsReady} STT=${com.literacy.app.ui.voice.VoiceHub.offlineSttReady}"
+                                } catch (e: Exception) {
+                                    dlMsg = "失败: ${e.message}"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    ) { Text("下载语音包（mock）") }
+                }
+            }
+        }
     }
 }

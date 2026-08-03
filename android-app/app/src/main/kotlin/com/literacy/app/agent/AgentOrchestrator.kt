@@ -186,21 +186,27 @@ class AgentOrchestrator(
             } else com.literacy.agent.model.VoiceIntent.OTHER
         // review-10 P1-1：按当前阶段绑定本地 phase/dimension（不再固定 recognize——
         // explain/sentence 等语音结果写错维度/被拒）
-        val phase = when (runner.state.phase) {
+        // review-11 批A：复习轮语音作答与 tapped 一致——phase 留空（record_result 按 reviewStage
+        // 校验 assess/reinforce，不再被误绑 recognize 拒绝），score 仍本地绑定（听音判题真值），
+        // 维度由 record_result 的 exercise_type 题型推导（不在此猜）
+        val reviewMode = runner.state.mode == com.literacy.agent.model.Mode.REVIEW
+        val phase = if (reviewMode) null else when (runner.state.phase) {
             Phase.RECOGNIZE -> "recognize"
             Phase.EXPLAIN -> "explain"
             Phase.SENTENCE -> "sentence"
             else -> "recognize"
         }
-        val dim = when (phase) {
-            "explain" -> com.literacy.agent.model.Dimension.UNDERSTAND
-            "sentence" -> com.literacy.agent.model.Dimension.APPLY
+        val dim = when {
+            reviewMode -> null
+            phase == "explain" -> com.literacy.agent.model.Dimension.UNDERSTAND
+            phase == "sentence" -> com.literacy.agent.model.Dimension.APPLY
             else -> com.literacy.agent.model.Dimension.RECOGNIZE
         }
         // review-11 P1-1.1：认读分数本地绑定——recognize 阶段有本地真值（STT vs 目标字）：
         // RECOGNIZED=1.0、其余（WRONG/看拼音）=0.0；explain/sentence 本地只判「尝试即可」
-        // （PhaseMachine §6.3 无对错真值），score 保持 null 由模型裁决——本地权威优先但无本地值可绑
-        val score = if (phase == "recognize") {
+        // （PhaseMachine §6.3 无对错真值），score 保持 null 由模型裁决——本地权威优先但无本地值可绑。
+        // 复习轮同样绑本地判题真值（听音选字：STT 命中目标字=1.0 否则 0.0，与 tapped 语义一致）
+        val score = if (phase == "recognize" || reviewMode) {
             if (intent == com.literacy.agent.model.VoiceIntent.RECOGNIZED) 1.0 else 0.0
         } else null
         beginAttempt(com.literacy.agent.model.AttemptContext(
@@ -325,6 +331,7 @@ class AgentOrchestrator(
                 lastExerciseId = null   // 一次性消费：旧题清空
                 lastExerciseType = null
                 currentExercise = null   // review-11 P1-1.4：本地选择题一次性消费（UI 不再渲染旧题）
+                if (exerciseId != null) consumedExerciseIds += exerciseId   // review-11 批A：旧题不可复活
                 llmTurn(ButtonTapped(action, correct, exerciseId))
             }
         }
@@ -341,6 +348,11 @@ class AgentOrchestrator(
         private set
     var lastExerciseType: String? = null
         private set
+
+    /** review-11 批A：已作答消费的题目 id——llmTurn 每次从 recentUiTools 重提 show_options，
+     *  作答后 currentExercise 已清空但旧题仍在 recentUiTools，无条件重提会让旧题复活可再点；
+     *  消费记录让提取跳过旧题（新题出现时旧记录作废）。 */
+    private val consumedExerciseIds = mutableSetOf<String>()
 
     /** review-11 P1-1.4：本地选择题真值——show_options 执行后提取（选项 + 题目 id + 正确答案=当前字）。
      *  UI 渲染本地保存的选项（不直接信模型 show_options 参数渲染选项）；判题 correct=选项==当前字；
@@ -376,8 +388,15 @@ class AgentOrchestrator(
         // review-10 P1-5：从最近 show_options 提取当前题目（exercise_id/options 供判题一次性消费）
         // review-11 P1-1.4：同时提取本地选择题真值（UI 渲染源——不直接信模型参数渲染选项）
         runner.recentUiTools.lastOrNull { it.name == "show_options" }?.let { tool ->
-            lastExerciseId = tool.arguments["exercise_id"]?.toString()
+            val exId = tool.arguments["exercise_id"]?.toString()
                 ?: tool.arguments["options"]?.toString()?.hashCode()?.toString()
+            // review-11 批A：作答后旧题不得复活——已消费的题目 id 跳过（currentExercise 保持 null）；
+            // 新题（未消费）出现时旧消费记录作废（题目 id 可复用）
+            if (exId != null) {
+                if (exId in consumedExerciseIds) return@let
+                consumedExerciseIds.clear()
+            }
+            lastExerciseId = exId
             lastExerciseType = tool.arguments["options"]?.toString()?.let { "audio_choice" }   // 选项型题型
             val opts = (tool.arguments["options"] as? List<*>)?.mapNotNull { it?.toString() }
                 ?: (tool.arguments["options"] as? String)?.split(",")?.map { it.trim() }

@@ -304,3 +304,15 @@ class ReplayRunnerTest {
         assertEquals(LearningPath.READ_ONLY, runner.state.learningPath)
     }
 
+    // ---- review-11 P1-4.1：show_sentence 校验 sentence_text ----
+
+    @Test
+    fun `show_sentence 合法调用（sentence_text 参数）不被拒绝`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("show_sentence", mapOf(
+            "sentence_text" to "我家有三口人。",
+        )))))
+        assertFalse(runner.rejectedCalls.contains("show_sentence"), "sentence_text 是 canonical 参数，不应拒绝")
+        assertTrue(runner.executedToolCalls.contains("show_sentence"))
+    }
+}

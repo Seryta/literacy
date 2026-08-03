@@ -1,0 +1,3 @@
+[
+{"text":"这个字不是‘妈’，我们学的是‘家’。它的拼音是 jiā。来，请再试一次：这个字读什么？","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "recognize","score": 0,"prompt_level": 3,"idempotency_key": "recognize_家_20250215_001"}}},{"name":"show_pinyin","arguments":{"char": "家","pinyin": "jiā"}},{"name":"listen","arguments":{}}]}
+]

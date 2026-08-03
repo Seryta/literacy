@@ -1,0 +1,3 @@
+[
+{"text":"你好，欢迎来到成人识字课堂！今天我们来认识第一个汉字——“人”。请看屏幕上的字形和图画，想一想它像什么。","toolCalls":[{"name":"show_character","arguments":{"char": "人","scenario": "一个人站立、双臂伸开的形象","revealStrokes": 1}},{"name":"advance_phase","arguments":{}}]}
+]

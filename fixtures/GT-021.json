@@ -1,0 +1,4 @@
+[
+{"text":"你读的是“妈 mā”，不过这个字是“家 jiā”。别急，我们看字形：“家”上面是宝盖头，像屋顶，下面是“豕”；和“妈”不一样。来，再试一次，这个字怎么读？","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "recognize","score": 0.0,"prompt_level": 3,"idempotency_key": "rec-gt-021-att-1"}}},{"name":"listen","arguments":{}}]},
+{"text":"很好，你认出了“家”这个字！接下来我们一起来学一学怎么写它。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "recognize","score": 1.0,"prompt_level": 3,"idempotency_key": "rec-gt-021-att-2"}}},{"name":"advance_phase","arguments":{}}]}
+]

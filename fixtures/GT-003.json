@@ -1,0 +1,3 @@
+[
+{"text":"很好，你认出了“家”字，读音是 jiā。接下来我们学习怎么写这个字。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "recognize","score": 100,"prompt_level": 3,"idempotency_key": "rec_recognize_家_1712345678"}}},{"name":"advance_phase","arguments":{}}]}
+]

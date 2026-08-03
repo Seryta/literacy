@@ -1,0 +1,3 @@
+[
+{"text":"欢迎回来！我们继续学习这个字。先仔细观察字形，然后跟着我一起写第一笔。","toolCalls":[{"name":"show_character","arguments":{"char": "人"}}]}
+]

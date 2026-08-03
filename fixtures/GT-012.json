@@ -1,0 +1,3 @@
+[
+{"text":"你好！欢迎来到成人识字课堂。今天我们要认识一个新的汉字。请看屏幕上的这个字，它像一个站立的人，这个字就是'人'。我们先来观察它的形状。","toolCalls":[{"name":"show_character","arguments":{"char": "人","context": "一个人站立的样子"}},{"name":"advance_phase","arguments":{"to": "recognize"}}]}
+]

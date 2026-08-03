@@ -1,0 +1,3 @@
+[
+{"text":"好的，我们开始学习第一个汉字，这是“人”。请看这个字的形状和场景。","toolCalls":[{"name":"show_character","arguments":{"char": "人","scene": "一个人站立，双腿分开，像这个字的形状"}},{"name":"advance_phase","arguments":{}}]}
+]

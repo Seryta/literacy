@@ -1,0 +1,3 @@
+[
+{"text":"您好！欢迎开始识字学习。今天我们学习汉字“家”，先来看看它的字形和场景。","toolCalls":[{"name":"show_character","arguments":{"char": "家"}},{"name":"advance_phase","arguments":{"char": "家","fromPhase": "introduce","toPhase": "recognize"}}]}
+]

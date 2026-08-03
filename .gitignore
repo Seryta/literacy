@@ -9,3 +9,4 @@ android-app/.kotlin/
 android-app/app/build/
 android-app/local.properties
 android_components/
+gradle-cache/

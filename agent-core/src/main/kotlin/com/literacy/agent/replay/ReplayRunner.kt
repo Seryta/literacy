@@ -211,12 +211,26 @@ class ReplayRunner(
         judgePhase(ev)
         // 自动通过阶段（introduce/demonstrate/record）：本地总是穿过（§6.3）
         while (state.phase in AUTO_PASS && phaseReady) {
-            advanceStep()
+            // review-11 P1-1.3：无法推进必须中止（复习模式 advance_phase 不在 allowed / 已到流程末尾）——
+            // 否则 phaseReady 保持 true 死循环（复习轮书写事件暴露：startReview 后 phase 遗留 INTRODUCE）
+            if (!advanceStep()) break
             judgePhase(ev)
         }
         // P1-7：掌握裁决统一到 record_result（§6.4）；这里保留签名达标本地逻辑 + 笔画累计
         adjudicateOnWriting(ev)
         strokeCompleted(ev)   // P1-6：跟写成功累计笔画
+        // review-11 P1-1.3：复习轮书写事件即本地作答证据——绑定 attempt（score=本次评估、
+        // phase=null 避免与 assess/reinforce 落库 phase 冲突），record_result 借此校验证据。
+        // 学习轮 attempt 由 App 层 beginAttempt 绑定（此处不动，mock 测试保持宽松）
+        if (state.mode == Mode.REVIEW) {
+            state = state.copy(attempt = com.literacy.agent.model.AttemptContext(
+                phase = null,
+                score = ev.score,
+                dimension = null,
+                promptLevel = state.promptLevel,
+                issues = ev.issues,
+            ))
+        }
         return if (autoAdvance) advanceStep() else phaseReady
     }
 
@@ -408,7 +422,7 @@ class ReplayRunner(
         judgePhase(ev)
         // 与 writing() 一致：自动通过阶段本地穿过（review-05 P2-7）
         while (state.phase in AUTO_PASS && phaseReady) {
-            advanceStep()
+            if (!advanceStep()) break   // 无法推进（复习模式）立即中止，防死循环（与 writing() 同守卫）
             judgePhase(ev)
         }
         if (autoAdvance) advanceStep()
@@ -553,9 +567,18 @@ class ReplayRunner(
                 "next" -> if (machine.isActionAllowed("next", state)) {
                     if (!nextReviewChar()) rejectedCalls += tc.name   // 队列清空 → 本地拒绝（GT-054）
                 } else rejectedCalls += tc.name
-                // skip_character：本地记录跳过原因并迁移到 record（§6.2；record_result phase=skip 由后续落库）
+                // skip_character：本地记录跳过原因（reason → attempt.issues，随 record_result
+                // phase=skip 落库，review-11 P1-7）并迁移到 record（§6.2；record_result phase=skip 由后续落库）
                 "skip_character" -> if (machine.isActionAllowed("skip_character", state)) {
-                    state = state.copy(phase = Phase.RECORD, allowedActions = allowedFor(Phase.RECORD))
+                    val reason = tc.arguments["reason"]?.toString()
+                    state = state.copy(
+                        phase = Phase.RECORD,
+                        allowedActions = allowedFor(Phase.RECORD),
+                        attempt = state.attempt?.copy(issues = listOfNotNull(reason))
+                            ?: com.literacy.agent.model.AttemptContext(
+                                phase = "skip", issues = listOfNotNull(reason),
+                            ),
+                    )
                 } else rejectedCalls += tc.name
                 // P1-9：complete_character 校验通过后产生 CharacterCompleted + 回到下一字 introduce（§5：本地完成当前字）
                 "complete_character" -> if (machine.isActionAllowed(tc.name, state)) {
@@ -671,6 +694,13 @@ class ReplayRunner(
         // review-10 P1-3：复习轮按当前 reviewStage 校验落库 phase——RECALL/NEXT 无证据不落库；
         // ASSESS 写 assess（判题）；REINFORCE 写 reinforce（再学），且允许补记 assess（判题延迟落库，GT-053）
         if (state.mode == Mode.REVIEW) {
+            // review-11 P1-1.3：复习轮 record_result 必须带本地作答证据（attempt.score != null）——
+            // 模型不能在出题回合直接 record_result 打开 reviewAnswered 门禁（无作答即无分数）
+            if (state.attempt?.score == null) {
+                rejectedCalls += "record_result"
+                rejectReasons += "record_result: 复习轮缺少本地作答证据（attempt.score）"   // review-11 P1-1.3
+                return
+            }
             val validPhase = when (state.reviewStage) {
                 ReviewStage.ASSESS -> phase == "assess"
                 ReviewStage.REINFORCE -> phase == "reinforce" || phase == "assess"
@@ -690,8 +720,10 @@ class ReplayRunner(
             rejectReasons += "record_result: 缺 score（0-1，不得省略）"   // review-09 P1-8
             return
         }
-        val effectiveScore = attempt?.score ?: score ?: 0.0   // 本地权威优先（写评估/判题分数）
-        val ok = !isSkip && effectiveScore >= 0.6
+        // review-11 P1-7：skip 落库 score=null（协议：跳过无分数，SessionResult.score 可空）；
+        // 其余尝试本地权威优先（写评估/判题分数）
+        val effectiveScore = if (isSkip) null else (attempt?.score ?: score ?: 0.0)
+        val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
         // 复习轮也按题型推维度（不再恒最弱——听音选字更新识读而非书写），无题型才兜底最弱（事务内）
         val baseDim = attempt?.dimension
@@ -717,7 +749,10 @@ class ReplayRunner(
         ) { latest ->
             val dim = baseDim ?: if (state.mode == Mode.REVIEW) weakestDimension(latest) else null
             val adjudicated = if (dim != null && !isSkip) {
-                adjudicator.adjudicate(latest, dim, ok, promptLevelToInt(promptLevelStr), isReview = state.mode == Mode.REVIEW)
+                // review-11 P1-1.2：裁决用本地绑定的提示等级（attempt.promptLevel 兜底 state.promptLevel）——
+                // 模型 prompt_level 字段仅用于落库展示（缺失/有提示尝试不再被误判为 L0 无提示掌握）
+                val localLevel = attempt?.promptLevel ?: state.promptLevel
+                adjudicator.adjudicate(latest, dim, ok, localLevel, isReview = state.mode == Mode.REVIEW)
             } else latest
             // P1-1：学习轮 + 复习轮都排期（等级1→当天，等级2→1-3天，§2/§6）——复习队列生产链路不再为空
             // review-10 P1-2：skip 不参与排期（跳过不改变间隔/ease）
@@ -757,14 +792,6 @@ class ReplayRunner(
     private fun isWritingChannel(exerciseType: String?): Boolean = when {
         exerciseType != null -> exerciseType !in NON_WRITE_EXERCISES
         else -> state.learningPath.check == com.literacy.agent.model.IndependentCheck.WRITE
-    }
-
-    /** prompt_level 字符串口径（none/hint/full_demo → L0/L1/L4，§7.1）。 */
-    private fun promptLevelToInt(v: String?): Int = when (v) {
-        "none" -> 0
-        "hint" -> 1
-        "full_demo" -> 4
-        else -> v?.toIntOrNull() ?: 0
     }
 
     /**

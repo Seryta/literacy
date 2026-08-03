@@ -297,7 +297,7 @@ storage: {}
 
 **前置状态**：
 ```yaml
-lesson_state: { phase: independent_write, idempotency_key: 550e8400-e29b-41d4-a716-446655440000 }
+lesson_state: { phase: independent_write, prompt_level: 0, idempotency_key: 550e8400-e29b-41d4-a716-446655440000 }
 ```
 
 **事件序列**：

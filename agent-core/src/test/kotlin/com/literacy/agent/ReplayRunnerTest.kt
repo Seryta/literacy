@@ -44,6 +44,9 @@ class ReplayRunnerTest {
         assertTrue(runner.writing("guided_write", ok = true, promptLevel = 3))
         assertEquals(Phase.INDEPENDENT_WRITE, runner.state.phase)
 
+        // review-11 P1-1.2：裁决用本地提示等级（attempt.promptLevel 兑底 state.promptLevel），
+        // 模型 record_result 的 prompt_level 字段仅落库展示——独立写 L0 需本地状态为 L0（GT-023 语义）
+        runner.configureState(runner.state.copy(promptLevel = 0))
         assertTrue(runner.writing("independent_write", ok = true, promptLevel = 0))
         // P1-7：裁决统一到 record_result——经 llmTurn 落库触发掌握升级
         runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
@@ -118,9 +121,11 @@ class ReplayRunnerTest {
         assertEquals(1, rp.store.getCharacter("家").masteryRecognize)
 
         // 对照组：书写通道独立写判对 → 仍映射 WRITE（P1-7 §4：L0 无提示成功 → 书写等级 2）
+        // review-11 P1-1.2：裁决用本地提示等级——L0 语义需本地 state.promptLevel=0（模型字段仅展示）
         val wp = ReplayRunner().startSession("家", LearningPath.WRITE_PARALLEL)
         wp.advance(); wp.voice(VoiceIntent.RECOGNIZED); wp.advance()
         wp.writing("guided_write", ok = true, promptLevel = 3)
+        wp.configureState(wp.state.copy(promptLevel = 0))
         wp.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
             "char" to "家",
             "result" to mapOf("phase" to "independent_write", "score" to 0.9, "prompt_level" to "none",
@@ -138,4 +143,82 @@ class ReplayRunnerTest {
         // 非法动作名（协议外）始终拒绝
         assertFalse(runner.control("drop_database"))
     }
+
+    // ---- review-11 P1-1.3：复习轮 record_result 必须带本地作答证据 ----
+
+    @Test
+    fun `复习轮出题回合直接 record_result 被拒绝（无作答证据）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess（beginAttempt 语义：无本地作答证据）
+        // 模型在出题回合（assess）直接 record_result——无本地判题/书写证据 → 拒绝落库
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-no-evidence"),
+        )))))
+        assertTrue(runner.rejectedCalls.contains("record_result"), "无作答证据不得落分")
+        assertEquals(0, runner.store.results.size)
+        assertFalse(runner.reviewAnswered, "门禁不得被无证据 record_result 打开")
+    }
+
+    @Test
+    fun `复习轮判题后 record_result 落库（本地作答证据通过）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 本地判题（作答证据 + 门禁）
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-evidence"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"))
+        assertEquals(1, runner.store.results.size)
+        assertTrue(runner.reviewAnswered)
+    }
+
+    @Test
+    fun `复习轮书写事件即本地作答证据（GT-053 链路）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("家", masteryRecognize = 2))
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        // GT-053 语义：强化阶段由 lesson_state 直置（assess 判题门禁在真实流里由判题点开，
+        // 此处聚焦「书写事件即证据」——record_result 落 reinforce 校验 attempt.score）
+        runner.configureState(runner.state.copy(reviewStage = com.literacy.agent.model.ReviewStage.REINFORCE))
+        // 独立写失败（本地评估）：绑定作答证据
+        runner.writing("independent_write", ok = false, promptLevel = 4, score = 0.4)
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "reinforce", "score" to 0.4, "prompt_level" to "3", "idempotency_key" to "rev-write-evidence"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "书写评估是本地作答证据")
+        assertEquals(1, runner.store.results.size)
+        // 复习出错 + ≥L3 提示 → 降一级（GT-053）
+        assertEquals(1, runner.store.getCharacter("家").masteryRecognize)
+    }
+
+    // ---- review-11 P1-7：skip 落库 score=null + 跳过原因保存 ----
+
+    @Test
+    fun `skip 落库 score 为 null 且保存跳过原因`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "skip",
+        )))
+        // 模型调 skip_character 带原因 → reason 进入 attempt.issues
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("skip_character", mapOf("reason" to "学生主动跳过")))))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "skip", "idempotency_key" to "skip-1"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"))
+        assertEquals(1, runner.store.results.size)
+        val rec = runner.store.results.single()
+        assertEquals("skip", rec.phase)
+        assertEquals(null, rec.score, "skip 协议要求 score=null（不得合成 0.0）")
+        assertEquals(listOf("学生主动跳过"), rec.issues, "跳过原因随记录落库")
+    }
+
 }

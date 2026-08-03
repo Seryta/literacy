@@ -233,6 +233,16 @@ class CaseRunner(private val runner: ReplayRunner) {
         case.setup.characters.forEach { (char, record) ->
             runner.store.upsertCharacter(record)
         }
+        // review-11 P1-1.2：lesson_state.prompt_level 是本地裁决权威——phase=null（学习模式
+        // SessionStarted 事件 startSession 从 savedLevel 恢复）时也要生效：预写
+        // characters.currentPromptLevel，让两条路径（configureState / startSession）都读到
+        if (s.phase == null && s.mode != Mode.REVIEW && s.promptLevel != 3) {
+            val char = inferChar(case)
+            if (char != null) {
+                val rec = runner.store.getCharacter(char)
+                runner.store.upsertCharacter(rec.copy(currentPromptLevel = s.promptLevel))
+            }
+        }
         // sessions / name_plan 前置注入
         runner.store.seedSessions(case.setup.sessions)
         if (case.setup.namePlan != null) runner.store.namePlan = case.setup.namePlan

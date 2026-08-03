@@ -9,7 +9,7 @@
 **前置状态**：
 ```yaml
 learner_profile: { display_name: 张阿姨, learning_path: write_parallel }
-lesson_state: { phase: null, current_char: 家 }
+lesson_state: { phase: null, current_char: 家, prompt_level: 0 }   # review-11 P1-1.2：本地裁决用 state.promptLevel——L0 独立写才给书写等级 2
 ```
 
 **事件序列**：

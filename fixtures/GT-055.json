@@ -1,0 +1,3 @@
+[
+{"text":"好的，复习都完成了。那我们开始学习一个新字。请看屏幕上的这个字，它读作rén，表示“人”。","toolCalls":[{"name":"show_character","arguments":{"char": "人","scene": "一个人站立的样子"}},{"name":"advance_phase","arguments":{"to": "recognize"}}]}
+]

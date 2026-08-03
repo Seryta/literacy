@@ -1,0 +1,3 @@
+[
+{"text":"你好！欢迎来到成人识字课堂。我们先来认识一个新字，请看屏幕上的这个字。","toolCalls":[{"name":"show_character","arguments":{"char": "好"}},{"name":"advance_phase","arguments":{"to": "recognize"}}]}
+]

@@ -1,0 +1,3 @@
+[
+{"text":"好的，我们先跳过这个字。我来记录一下原因。","toolCalls":[{"name":"skip_character","arguments":{"reason": "user_requested"}}]}
+]

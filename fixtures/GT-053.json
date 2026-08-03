@@ -1,0 +1,3 @@
+[
+{"text":"我们一起来看看‘家’字。它的拼音是 jiā，上面是宝盖头，下面是‘豕’。你刚才写的‘家’，整体框架对了，但宝盖头的位置可以再靠上一点。来，跟我读：jiā，家里有爸爸、妈妈和我。观察字形，记住笔画，再试着写一遍吧。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "reinforce","score": 0.4,"prompt_level": 3,"idempotency_key": "rec-gt-053-att-1"}}},{"name":"show_character","arguments":{"char": "家"}},{"name":"show_pinyin","arguments":{"char": "家"}}]}
+]

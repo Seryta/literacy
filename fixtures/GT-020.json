@@ -1,0 +1,9 @@
+[
+{"text":"你好！欢迎来到今天的识字课。我们先来看一个很亲切的字——“家”。家是什么意思呢？就是我们的家庭、住的地方。看看这个字的样子，上面像屋顶，下面像一只小猪，古代人家里养猪，就表示有住所、有温暖。现在我们一起来认识它吧！","toolCalls":[{"name":"show_character","arguments":{"char": "家"}},{"name":"advance_phase","arguments":{"phase": "introduce"}}]},
+{"text":"很好！你认出了“家”字。接下来我们学习怎么写“家”，先看笔顺。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "recognize","score": 1.0,"prompt_level": 3,"idempotency_key": "recognize-家-20250220-120000"}}},{"name":"advance_phase","arguments":{"nextPhase": "guided_write"}}]},
+{"text":"跟写环节完成了！你已经熟悉了‘家’字的笔画顺序。现在我们来试试独立书写这个字，写出你心中的‘家’。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "guided_write","score": 0.0,"prompt_level": 3,"idempotency_key": "guided_write-家-20250327-abc123"}}},{"name":"advance_phase","arguments":{}}]},
+{"text":"太好了，你已经能独立写出“家”字了！我们进入下一阶段。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "independent_write","score": 0.9,"prompt_level": 3,"idempotency_key": "ind_w_家_20250101_123456"}}},{"name":"advance_phase","arguments":{}}]},
+{"text":"你说得很好，“家就是我的家，一家人住的地方”，这就是‘家’的含义。接下来我们进入下一环节，看看怎么把这个字写出来。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "explain","score": 1.0,"prompt_level": 2,"idempotency_key": "explain-家-1700000000"}}},{"name":"advance_phase","arguments":{}}]},
+{"text":"很好！你说出了完整句子“我家有三口人”，用到了“家”字。现在进入下一阶段。","toolCalls":[{"name":"record_result","arguments":{"char": "家","result": {"phase": "sentence","score": 100,"prompt_level": 2,"idempotency_key": "sentence-家-20250327-001"}}},{"name":"advance_phase","arguments":{}}]},
+{"text":"来看“家”字。宝盖头像屋顶，“豕”是猪，有猪的地方就是家。我们记住它的样子。","toolCalls":[{"name":"show_character","arguments":{"char": "家","context": "屋顶下有猪，代表家"}},{"name":"advance_phase","arguments":{}}]}
+]

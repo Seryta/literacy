@@ -1,0 +1,3 @@
+[
+{"text":"没关系，语音识别遇到点小问题。我们换个方式，看屏幕上的选项，选出你听到的字。","toolCalls":[{"name":"show_options","arguments":{}}]}
+]

@@ -1,0 +1,5 @@
+[
+{"text":"好的，我们一起来学签名。你叫什么名字？可以说给我听吗？","toolCalls":[{"name":"listen","arguments":{}}]},
+{"text":"现在我们来认识一个新的汉字。请看屏幕上的这个字，你认识它吗？","toolCalls":[{"name":"show_character","arguments":{"char": "人"}},{"name":"advance_phase","arguments":{"phase": "recognize"}},{"name":"listen","arguments":{}}]},
+{"text":"太好了，你刚才写得很好！现在我们开始正式学习。请先看这个字——「人」，一撇一捺，就像一个人站立的形状。","toolCalls":[{"name":"show_character","arguments":{"char": "人","scene": "一个人站立，双腿分开"}},{"name":"advance_phase","arguments":{}}]}
+]

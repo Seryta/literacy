@@ -1,0 +1,3 @@
+[
+{"text":"好的，这是帮助提示。这个字读 jiā，意思是“家”。我们进入书写阶段吧。","toolCalls":[{"name":"show_pinyin","arguments":{"char": "家","pinyin": "jiā"}},{"name":"advance_phase","arguments":{"char": "家","nextPhase": "guided_write"}}]}
+]

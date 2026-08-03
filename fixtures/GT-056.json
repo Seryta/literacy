@@ -1,0 +1,3 @@
+[
+{"text":"您好！欢迎开始识字学习。今天我们先来认识一个非常常见的汉字——“人”。您看这个字的形状，就像一个人站立的样子，两条腿稳稳地站在地上。我们先来仔细观察它，然后学习怎么写。","toolCalls":[{"name":"show_character","arguments":{"char": "人"}},{"name":"advance_phase","arguments":{}}]}
+]

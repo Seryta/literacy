@@ -1,0 +1,3 @@
+[
+{"text":"好的，累了就休息吧。今天你已经很努力了，我们今天就学到这儿。","toolCalls":[{"name":"end_session","arguments":{"highlights": "","struggles": "","name_plan_progress": ""}}]}
+]

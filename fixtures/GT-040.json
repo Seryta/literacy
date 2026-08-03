@@ -1,0 +1,3 @@
+[
+{"text":"这个字读作 rén，是‘人民’的‘人’。请跟我读：rén。","toolCalls":[{"name":"show_pinyin","arguments":{"char": "人","pinyin": "rén"}},{"name":"advance_phase","arguments":{}}]}
+]

@@ -1,0 +1,3 @@
+[
+{"text":"好的，我们先看这个字。‘家’由‘宀’和‘豕’组成，宝盖头表示房屋，豕是猪，古时家中有猪便是家。它的拼音是 jiā。现在我带您进入认读环节，请尝试读出它。","toolCalls":[{"name":"show_character","arguments":{"char": "家"}},{"name":"show_pinyin","arguments":{"char": "家","pinyin": "jiā"}},{"name":"advance_phase","arguments":{"from": "introduce","to": "recognize"}}]}
+]

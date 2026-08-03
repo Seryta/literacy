@@ -1,0 +1,3 @@
+[
+{"text":"好的，请默写“家”字。先回忆字形，写好后告诉我。","toolCalls":[{"name":"clear_grid","arguments":{}},{"name":"show_character","arguments":{"char": "家","revealStrokes": 0}}]}
+]

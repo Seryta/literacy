@@ -1,0 +1,3 @@
+[
+{"text":"你读的是“家”（jiā），不过你仔细看宝盖头下面——不是“豕”，而是“女”。宝盖头表示屋子，有女子在家就是“安”（ān，安全）。现在你再看着这个字，读一遍试试？","toolCalls":[{"name":"show_character","arguments":{"char": "安"}},{"name":"listen","arguments":{}}]}
+]

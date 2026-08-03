@@ -1,0 +1,3 @@
+[
+{"text":"好的，不写字没关系。我们来听音选字，请看屏幕上的选项。","toolCalls":[{"name":"show_options","arguments":{"mode": "listen_choose"}}]}
+]

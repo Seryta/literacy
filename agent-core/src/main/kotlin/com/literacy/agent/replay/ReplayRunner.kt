@@ -541,6 +541,7 @@ class ReplayRunner(
         // review-10 P1-9：过滤命中记录（UI 与 TTS 共用过滤文本；告警注入下一轮上下文）
         if (filtered.second) filterHit = true
         if (paused) return   // review-09 P1-12：暂停中迟到回包只记录文本，不执行任何工具副作用（落库/推进）
+        if (sessionEnded) return   // review-11 P1-2：会话结束后迟到回包不执行工具副作用（end 串行化后的防御层）
         for (tc in output.toolCalls.take(MAX_TOOL_CALLS)) {
             if (!validateToolCall(tc)) {
                 rejectedCalls += tc.name   // §10 参数非法 → 拒绝执行并注入 error result（GT-008）
@@ -641,8 +642,12 @@ class ReplayRunner(
         val charB = args["char_b"]
         val result = args["result"]
         return when (tc.name) {
-            "show_character", "show_pinyin", "show_image", "show_example", "show_sentence" ->
+            "show_character", "show_pinyin", "show_image", "show_example" ->
                 !(char?.toString() ?: "").isBlank()
+            // review-11 P1-4.1：show_sentence 的 canonical 参数是 sentence_text（不是 char）——
+            // 此前要求 char 会拒绝合法调用（有提示尝试被拒）
+            "show_sentence" ->
+                !(args["sentence_text"]?.toString() ?: "").isBlank()
             "compare_characters" ->
                 !(charA?.toString() ?: "").isBlank() && !(charB?.toString() ?: "").isBlank()
             "record_result" -> {

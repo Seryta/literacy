@@ -174,6 +174,16 @@ class AgentOrchestrator(
 
     /** 用户语音（STT 文本或文本框输入）。forcedIntent 用于开发模式模拟（绕过中文输入）。 */
     fun userSpoke(text: String, forcedIntent: com.literacy.agent.model.VoiceIntent? = null) {
+        // review-11 P1-1.1：先解析 intent（含 RECOGNIZED/WRONG 判定）——本地真值（STT 文本 vs 目标字）
+        // 在 beginAttempt 前确定，score 由本地判定绑定（模型不得改写为假分）
+        val intent = forcedIntent
+            ?: intentResolver.activeIntent(text)
+            ?: if (runner.state.phase == Phase.RECOGNIZE) {
+                val target = runner.state.char
+                if (target != null && intentResolver.isRecognitionCorrect(text, target)) {
+                    com.literacy.agent.model.VoiceIntent.RECOGNIZED
+                } else com.literacy.agent.model.VoiceIntent.WRONG
+            } else com.literacy.agent.model.VoiceIntent.OTHER
         // review-10 P1-1：按当前阶段绑定本地 phase/dimension（不再固定 recognize——
         // explain/sentence 等语音结果写错维度/被拒）
         val phase = when (runner.state.phase) {
@@ -187,15 +197,18 @@ class AgentOrchestrator(
             "sentence" -> com.literacy.agent.model.Dimension.APPLY
             else -> com.literacy.agent.model.Dimension.RECOGNIZE
         }
-        beginAttempt(com.literacy.agent.model.AttemptContext(phase = phase, dimension = dim))   // P0-1 + P1-7
-        val intent = forcedIntent
-            ?: intentResolver.activeIntent(text)
-            ?: if (runner.state.phase == Phase.RECOGNIZE) {
-                val target = runner.state.char
-                if (target != null && intentResolver.isRecognitionCorrect(text, target)) {
-                    com.literacy.agent.model.VoiceIntent.RECOGNIZED
-                } else com.literacy.agent.model.VoiceIntent.WRONG
-            } else com.literacy.agent.model.VoiceIntent.OTHER
+        // review-11 P1-1.1：认读分数本地绑定——recognize 阶段有本地真值（STT vs 目标字）：
+        // RECOGNIZED=1.0、其余（WRONG/看拼音）=0.0；explain/sentence 本地只判「尝试即可」
+        // （PhaseMachine §6.3 无对错真值），score 保持 null 由模型裁决——本地权威优先但无本地值可绑
+        val score = if (phase == "recognize") {
+            if (intent == com.literacy.agent.model.VoiceIntent.RECOGNIZED) 1.0 else 0.0
+        } else null
+        beginAttempt(com.literacy.agent.model.AttemptContext(
+            phase = phase,
+            score = score,
+            dimension = dim,
+            promptLevel = runner.state.promptLevel,   // review-11 P1-1.1：本地提示等级绑定（裁决权威）
+        ))   // P0-1 + P1-7
         // P2-18：不记录完整用户话语（隐私），截断
         val truncated = if (text.length > 20) text.take(20) + "…" else text
         // review-09 P2-9：用户话语不落日志（隐私）；仅 DEBUG 构建记录 intent/阶段
@@ -300,17 +313,19 @@ class AgentOrchestrator(
                 // review-10 P1-5：选择题本地判题——正确答案=当前目标字（听音选字/选字填空选项
                 // 含目标字+干扰项），点击即本地裁决；一次性消费（旧题不可重复点）
                 val correct = action == runner.state.char
+                val exerciseId = lastExerciseId ?: action   // review-11 P1-1.4：事件携带题目 id（模型按练习记录，GT-052 语义）
                 beginAttempt(com.literacy.agent.model.AttemptContext(
                     phase = null,
                     score = if (correct) 1.0 else 0.0,
                     dimension = null,
                     exerciseType = lastExerciseType,
                 ))
-                runner.tapped(action, correct, exerciseId = lastExerciseId ?: action)
+                runner.tapped(action, correct, exerciseId = exerciseId)
                 runner.markAnswered()   // review-09 P1-4：复习判题选项点击=作答完成（推进门禁证据）
                 lastExerciseId = null   // 一次性消费：旧题清空
                 lastExerciseType = null
-                llmTurn(ButtonTapped(action, correct, lastExerciseId))
+                currentExercise = null   // review-11 P1-1.4：本地选择题一次性消费（UI 不再渲染旧题）
+                llmTurn(ButtonTapped(action, correct, exerciseId))
             }
         }
     }
@@ -325,6 +340,17 @@ class AgentOrchestrator(
     var lastExerciseId: String? = null
         private set
     var lastExerciseType: String? = null
+        private set
+
+    /** review-11 P1-1.4：本地选择题真值——show_options 执行后提取（选项 + 题目 id + 正确答案=当前字）。
+     *  UI 渲染本地保存的选项（不直接信模型 show_options 参数渲染选项）；判题 correct=选项==当前字；
+     *  作答后清空（一次性消费，UI 侧 answerLocked 兜底禁用）。 */
+    data class LocalExercise(
+        val options: List<String>,
+        val exerciseId: String,
+        val correct: String,
+    )
+    var currentExercise: LocalExercise? = null
         private set
 
     private fun llmTurn(event: Event) {
@@ -348,10 +374,20 @@ class AgentOrchestrator(
         ttsText = runner.ttsText   // P1-13：SafetyGuard 过滤后的文本（TTS 用）
         micRequested = runner.listenRequested
         // review-10 P1-5：从最近 show_options 提取当前题目（exercise_id/options 供判题一次性消费）
+        // review-11 P1-1.4：同时提取本地选择题真值（UI 渲染源——不直接信模型参数渲染选项）
         runner.recentUiTools.lastOrNull { it.name == "show_options" }?.let { tool ->
             lastExerciseId = tool.arguments["exercise_id"]?.toString()
                 ?: tool.arguments["options"]?.toString()?.hashCode()?.toString()
             lastExerciseType = tool.arguments["options"]?.toString()?.let { "audio_choice" }   // 选项型题型
+            val opts = (tool.arguments["options"] as? List<*>)?.mapNotNull { it?.toString() }
+                ?: (tool.arguments["options"] as? String)?.split(",")?.map { it.trim() }
+            if (!opts.isNullOrEmpty()) {
+                currentExercise = LocalExercise(
+                    options = opts,
+                    exerciseId = lastExerciseId ?: opts.hashCode().toString(),
+                    correct = runner.state.char ?: "",
+                )
+            }
         }
         // review-09 P2-9：模型文本不落日志（隐私）；仅记录工具名
         if (com.literacy.app.BuildConfig.DEBUG) {

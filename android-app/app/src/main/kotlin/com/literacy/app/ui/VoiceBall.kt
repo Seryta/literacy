@@ -28,17 +28,25 @@ class SpeechInputManager(context: Context) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
     private var onResult: ((SpeechOutcome) -> Unit)? = null
+    private var autoRestart = false          // 连续监听模式（onboarding 自动听）
+    private var cancelled = false
 
     sealed interface SpeechOutcome {
         data class Text(val text: String) : SpeechOutcome
         data class Error(val message: String) : SpeechOutcome
     }
 
-    /** 开始录音识别；返回是否成功启动（无语音服务时 false）。 */
-    fun start(callback: (SpeechOutcome) -> Unit): Boolean {
+    /**
+     * 开始录音识别；返回是否成功启动（无语音服务时 false）。
+     * @param autoRestart 连续监听：静默重启循环（超时/无匹配不打扰用户），
+     *        适用于引导等需要"进来就自动听"的场景；硬错误（无权限/无音频）停止循环并回调 Error。
+     */
+    fun start(callback: (SpeechOutcome) -> Unit, autoRestart: Boolean = false): Boolean {
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) return false
-        val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(appContext).also { recognizer = it }
+        this.autoRestart = autoRestart
+        this.cancelled = false
         onResult = callback
+        val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(appContext).also { recognizer = it }
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
@@ -46,23 +54,39 @@ class SpeechInputManager(context: Context) {
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
-                val msg = when (error) {
-                    SpeechRecognizer.ERROR_NO_MATCH -> "没听清，请再说一遍"
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有说话，请对着话筒说"
-                    SpeechRecognizer.ERROR_AUDIO -> "麦克风没有声音，检查权限"
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "没有麦克风权限"
-                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音服务需要网络"
-                    else -> "语音识别失败，请重试"
+                when {
+                    // 连续监听：用户没说话/没听清 → 静默重启继续听（不打扰）
+                    autoRestart && !cancelled && (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) -> {
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 500)
+                    }
+                    // 硬错误：停止循环并上报
+                    else -> {
+                        val msg = when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH -> "没听清，请再说一遍"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有说话，请对着话筒说"
+                            SpeechRecognizer.ERROR_AUDIO -> "麦克风没有声音，检查权限"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "没有麦克风权限"
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音服务需要网络"
+                            else -> "语音识别失败，请重试"
+                        }
+                        onResult?.invoke(SpeechOutcome.Error(msg))
+                    }
                 }
-                onResult?.invoke(SpeechOutcome.Error(msg))
             }
             override fun onResults(results: Bundle?) {
                 val text = results
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     ?.takeIf { it.isNotBlank() }
-                if (text != null) onResult?.invoke(SpeechOutcome.Text(text))
-                else onResult?.invoke(SpeechOutcome.Error("没听清，请再说一遍"))
+                if (text != null) {
+                    onResult?.invoke(SpeechOutcome.Text(text))
+                    // 连续监听：识别完稍停继续听（用户可能继续说）
+                    if (autoRestart && !cancelled) {
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 900)
+                    }
+                } else {
+                    onError(SpeechRecognizer.ERROR_NO_MATCH)
+                }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -76,11 +100,27 @@ class SpeechInputManager(context: Context) {
         return true
     }
 
+    private fun restart() {
+        if (cancelled || !autoRestart) return
+        try { recognizer?.startListening(buildIntent()) } catch (e: Exception) {
+            onResult?.invoke(SpeechOutcome.Error("语音识别异常，请点一下宠物再说话"))
+        }
+    }
+
+    private fun buildIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
+    }
+
     fun cancel() {
+        cancelled = true
+        autoRestart = false
         recognizer?.cancel()
     }
 
     fun destroy() {
+        cancelled = true
         recognizer?.destroy()
         recognizer = null
     }

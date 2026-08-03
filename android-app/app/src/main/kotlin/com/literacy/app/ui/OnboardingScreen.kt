@@ -198,7 +198,7 @@ fun OnboardingScreen(
             )
         }
 
-        // ── 语音按钮：对机器人说话（说“第几个”/名字/对或不对/开始）──
+        // ── 语音：引导阶段自动持续听，无需点击；此按钮为听不清时的兜底 ──
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = onSpeak,
@@ -207,10 +207,13 @@ fun OnboardingScreen(
                 .height(LiteracyDimens.ActionButtonHeight),
             shape = MaterialTheme.shapes.extraLarge,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (listening) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                containerColor = if (listening) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
             ),
         ) {
-            Text(if (listening) "🔴 正在听…" else "🎙️ 对机器人说话", fontSize = 20.sp)
+            Text(
+                if (listening) "🎙️ 正在听，直接说话就行" else "听不清时，点这里说话",
+                fontSize = 19.sp,
+            )
         }
         Spacer(Modifier.height(8.dp))
 

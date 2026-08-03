@@ -1,8 +1,11 @@
 package com.literacy.app
 
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -68,7 +71,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
             if (hasPlan) needOnboarding = false
         }
     }
-
     // ── 全局语音：悬浮吉祥物 + 系统 STT + 按页面分发 ──
     val context = LocalContext.current
     val speech = remember { SpeechInputManager(context) }
@@ -80,6 +82,12 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     val voiceHandler = remember { mutableStateOf<(String) -> Unit>({}) }
     // 吉祥物气泡提示（各分支重组时设置）
     val bubbleText = remember { mutableStateOf<String?>(null) }
+    // 麦克风运行时权限（引导自动语音需要；拒绝则回落手动按钮）
+    var audioGranted by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        audioGranted = granted
+        if (!granted) scope.launch { snackbarHostState.showSnackbar("需要麦克风权限才能语音对话") }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -94,7 +102,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                             speech.cancel()
                             listening = false
                         } else {
-                            val ok = speech.start { outcome ->
+                            val ok = speech.start(callback = { outcome ->
                                 listening = false
                                 bubbleText.value = null
                                 when (outcome) {
@@ -102,7 +110,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                                     is SpeechInputManager.SpeechOutcome.Error ->
                                         scope.launch { snackbarHostState.showSnackbar(outcome.message) }
                                 }
-                            }
+                            })
                             if (ok) listening = true
                             else scope.launch { snackbarHostState.showSnackbar("语音服务不可用") }
                         }
@@ -120,7 +128,34 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                 )
                 voiceHandler.value = { text -> obVm.handleVoice(text) }
                 bubbleText.value = null
+                // 引导阶段自动语音：进来就持续听，无需点击（连续监听模式）
+                // 先请求麦克风权限，授权后自动启动监听
+                LaunchedEffect(Unit) {
+                    if (!audioGranted) {
+                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+                LaunchedEffect(audioGranted) {
+                    if (audioGranted && !listening) {
+                        val ok = speech.start({ outcome ->
+                            when (outcome) {
+                                is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
+                                // 硬错误（无权限/无音频等）：停止自动监听，回落手动按钮兜底
+                                is SpeechInputManager.SpeechOutcome.Error -> {
+                                    listening = false
+                                    scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                                }
+                            }
+                        }, autoRestart = true)
+                        listening = ok
+                    }
+                }
+                val stopAutoListen = {
+                    speech.cancel()
+                    listening = false
+                }
                 obVm.onComplete = { name, startNow ->
+                    stopAutoListen()
                     mascot = Mascots.candidates.firstOrNull { it.variant.id == settings.mascotId } ?: Mascots.default
                     needOnboarding = false
                     if (startNow) {
@@ -136,21 +171,31 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     listening = listening,
                     onSpeak = {
                         if (listening) {
-                            speech.cancel(); listening = false
-                        } else {
-                            val ok = speech.start { outcome ->
+                            // 手动点按钮时：如果自动监听在跑，重启一次（让用户立即说话）
+                            speech.cancel()
+                            speech.start({ outcome ->
                                 listening = false
                                 when (outcome) {
                                     is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
                                     is SpeechInputManager.SpeechOutcome.Error ->
                                         scope.launch { snackbarHostState.showSnackbar(outcome.message) }
                                 }
-                            }
+                            })
+                        } else {
+                            val ok = speech.start({ outcome ->
+                                listening = false
+                                when (outcome) {
+                                    is SpeechInputManager.SpeechOutcome.Text -> obVm.handleVoice(outcome.text)
+                                    is SpeechInputManager.SpeechOutcome.Error ->
+                                        scope.launch { snackbarHostState.showSnackbar(outcome.message) }
+                                }
+                            })
                             if (ok) listening = true
                             else scope.launch { snackbarHostState.showSnackbar("语音服务不可用") }
                         }
                     },
                     onSkip = {
+                        stopAutoListen()
                         settings.onboardingDone = true
                         needOnboarding = false
                     },

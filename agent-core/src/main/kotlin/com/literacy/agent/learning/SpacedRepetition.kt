@@ -83,12 +83,14 @@ class SpacedRepetition {
             .map { it.char }
 
     /** 将 next_review 推进到 today + intervalDays（复习完成后调用）。
-     *  review-10 P2-15：名字字折扣（×0.7）在此应用，至少 1 天（失败/折扣不落到 0 天）。 */
-    fun scheduleNextReview(record: CharacterRecord, today: LocalDate): CharacterRecord =
-        record.copy(
-            lastReview = today.toString(),
-            nextReview = today.plusDays(
-                (record.intervalDays * nameCharFactor(record)).toLong().coerceAtLeast(1),
-            ).toString(),
-        )
+     *  review-10 P2-15：名字字折扣（×0.7）在此应用，至少 1 天（失败/折扣不落到 0 天）。
+     *  review-11 P2-1：interval=0（学习中成功当天复习）是合法档位，保持当天——
+     *  只对正数折扣结果限制最少 1 天，不把 0 天强制变明天。 */
+    fun scheduleNextReview(record: CharacterRecord, today: LocalDate): CharacterRecord = record.copy(
+        lastReview = today.toString(),
+        nextReview = today.plusDays(
+            if (record.intervalDays <= 0) 0L   // 当天复习（interval 0）
+            else (record.intervalDays * nameCharFactor(record)).toLong().coerceAtLeast(1),
+        ).toString(),
+    )
 }

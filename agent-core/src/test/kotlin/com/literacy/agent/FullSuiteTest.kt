@@ -21,7 +21,9 @@ class FullSuiteTest {
     fun `全量解析：53 个用例全部可解析`() {
         val result = CaseLoader().loadFiles(dir)
         assertEquals(53, result.cases.size)
-        println("全量解析问题（不应掩盖用例）：${result.problems}")
+        // review-11 P2-4：用例解析问题必须断言（此前只打印——解析坏掉用例仍绿）
+        assertTrue(result.problems.isEmpty(), "用例解析问题（不应掩盖用例）：${result.problems}")
+        println("全量解析问题：${result.problems}")
         // 每模块数量核对（review-04 记录的分布）
         val byModule = result.cases.groupBy { it.module }.mapValues { it.value.size }
         println("模块分布：$byModule")

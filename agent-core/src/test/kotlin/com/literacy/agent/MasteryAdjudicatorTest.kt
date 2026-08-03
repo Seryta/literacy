@@ -109,4 +109,59 @@ class MasteryAdjudicatorTest {
         rec = adj.adjudicate(rec, Dimension.WRITE, ok = false, promptLevel = 3, isReview = true)
         assertEquals(2, rec.streakErrors(Dimension.WRITE))
     }
+
+    // ---- review-11 P1-6：达标链（跨门槛借用修复）----
+
+    @Test
+    fun `GT-021 L3 认对仍累计 streak（非达标成功计入展示）`() {
+        // 学习中（current<2）门槛要求 L1-L2（promptLevel<=2）；L3 认对不达标但仍是成功
+        var rec = CharacterRecord("家")
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 3)
+        assertEquals(1, rec.streakSuccess(Dimension.RECOGNIZE), "L3 认对 streak 期望 1（GT-021）")
+        assertEquals(1, rec.masteryRecognize, "单次赋值 1（不因 L3 达标）")
+    }
+
+    @Test
+    fun `两次 L1 加一次 L0 不升 3（跨门槛借用修复）`() {
+        // 初步掌握（current==2）门槛要求 L0；两次 L1 成功不得被一次 L0 借用越级
+        var rec = CharacterRecord("家", masteryWrite = 2)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 1)   // L1：不达标，打断链
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 1)   // L1：不达标
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)   // L0：达标链从 1 开始
+        assertEquals(2, rec.masteryWrite, "L1+L1+L0 不得升 3（达标链只有 1）")
+        // 展示 streak 仍累计全部成功（3 次）
+        assertEquals(3, rec.streakSuccess(Dimension.WRITE))
+    }
+
+    @Test
+    fun `连续两次 L0 从初步掌握升稳定掌握`() {
+        var rec = CharacterRecord("家", masteryWrite = 2)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)
+        assertEquals(3, rec.masteryWrite)
+        assertEquals(0, rec.streakSuccess(Dimension.WRITE), "门槛升级后达标链与 streak 清零")
+    }
+
+    @Test
+    fun `非达标成功打断达标链（L1-L0-L1-L0 不升 3）`() {
+        var rec = CharacterRecord("家", masteryWrite = 2)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 1)   // 打断
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)   // 链 1
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 1)   // 打断
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)   // 链 1
+        assertEquals(2, rec.masteryWrite, "L0 之间插入非达标成功则链重新计数")
+    }
+
+    @Test
+    fun `失败打断达标链（复习轮 L0 成功两次后失败需重新累计）`() {
+        var rec = CharacterRecord("家", masteryWrite = 2)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)    // 链 1
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)    // 链 2 → 升 3
+        assertEquals(3, rec.masteryWrite)
+        // 升 3 后：复习轮达标（isReview）——失败打断链
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = false, promptLevel = 4, isReview = true)   // 降级
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0, isReview = false)
+        assertEquals(2, rec.masteryWrite)
+        assertEquals(1, rec.streakSuccess(Dimension.WRITE), "升 3 后首次成功从链 1 开始（不借用升级前成功）")
+    }
 }

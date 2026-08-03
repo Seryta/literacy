@@ -75,6 +75,17 @@ class SpacedRepetitionTest {
     }
 
     @Test
+    fun `review-11 P2-1 interval 0 保持当天复习（不强制变明天）`() {
+        val today = java.time.LocalDate.of(2026, 8, 3)
+        // 学习中成功 → interval 0（当天复习档位）——scheduleNextReview 不得 coerceAtLeast(1) 变明天
+        val rec = CharacterRecord("家", masteryRecognize = 1, masteryWrite = 1, intervalDays = 0)
+        assertEquals(today.toString(), sr.scheduleNextReview(rec, today).nextReview)
+        // 名字字 ×0.7 折扣只影响正数档位（1 天 → 0.7 → 至少 1 天）
+        val nameRec = CharacterRecord("张", source = "name_plan", intervalDays = 1)
+        assertEquals(today.plusDays(1).toString(), sr.scheduleNextReview(nameRec, today).nextReview)
+    }
+
+    @Test
     fun `初步掌握成功 1-3 天`() {
         val rec = CharacterRecord("家", masteryRecognize = 2, masteryWrite = 2)
         assertEquals(1, sr.nextSchedule(rec, ok = true).intervalDays)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下 backup rules（fullBackupContent）：与 data_extraction_rules 同口径，
+    全量排除 sharedpref/database/file（学习数据与凭证不备份）。 -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="database" path="."/>
+    <exclude domain="file" path="."/>
+</full-backup-content>

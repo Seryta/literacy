@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ 备份规则（dataExtractionRules）：settings（含加密 api_key 文件）、
+     学习数据库、字库副本全部排除云备份与设备迁移——学习进度/凭证不随系统备份流动。
+     allowBackup=false 只禁用云备份（Android 12+ 上 device-to-device 设备迁移仍会发生），
+     <device-transfer> 排除是必需项而非纵深防御：缺它则换机迁移会带走 api_key 与学习数据。 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="file" path="."/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="file" path="."/>
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,340 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "v1-no-idempotency-index-placeholder",
+    "entities": [
+      {
+        "tableName": "characters",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`char` TEXT NOT NULL, `pinyin` TEXT NOT NULL, `masteryRecognize` INTEGER NOT NULL, `masteryWrite` INTEGER NOT NULL, `masteryUnderstand` INTEGER NOT NULL, `masteryApply` INTEGER NOT NULL, `status` TEXT NOT NULL, `currentPromptLevel` INTEGER NOT NULL, `streakSuccess` INTEGER NOT NULL, `streakErrors` INTEGER NOT NULL, `commonMistakes` TEXT NOT NULL, `source` TEXT, `easeFactor` REAL NOT NULL, `intervalDays` INTEGER NOT NULL, `lastReview` TEXT, `nextReview` TEXT, PRIMARY KEY(`char`))",
+        "fields": [
+          {
+            "fieldPath": "char",
+            "columnName": "char",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinyin",
+            "columnName": "pinyin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "masteryRecognize",
+            "columnName": "masteryRecognize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "masteryWrite",
+            "columnName": "masteryWrite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "masteryUnderstand",
+            "columnName": "masteryUnderstand",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "masteryApply",
+            "columnName": "masteryApply",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentPromptLevel",
+            "columnName": "currentPromptLevel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streakSuccess",
+            "columnName": "streakSuccess",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streakErrors",
+            "columnName": "streakErrors",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commonMistakes",
+            "columnName": "commonMistakes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "easeFactor",
+            "columnName": "easeFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intervalDays",
+            "columnName": "intervalDays",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReview",
+            "columnName": "lastReview",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nextReview",
+            "columnName": "nextReview",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "char"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` TEXT NOT NULL, `startedAt` TEXT NOT NULL, `endedAt` TEXT, `status` TEXT NOT NULL, `charsLearned` INTEGER NOT NULL, `charsReviewed` INTEGER NOT NULL, `namePlanProgress` TEXT, `highlights` TEXT, `struggles` TEXT, `durationSeconds` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAt",
+            "columnName": "endedAt",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "charsLearned",
+            "columnName": "charsLearned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "charsReviewed",
+            "columnName": "charsReviewed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "namePlanProgress",
+            "columnName": "namePlanProgress",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "highlights",
+            "columnName": "highlights",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "struggles",
+            "columnName": "struggles",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "session_character_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` INTEGER NOT NULL, `char` TEXT NOT NULL, `phase` TEXT NOT NULL, `exerciseType` TEXT, `score` REAL, `issues` TEXT NOT NULL, `promptLevel` TEXT, `idempotencyKey` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "char",
+            "columnName": "char",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exerciseType",
+            "columnName": "exerciseType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "issues",
+            "columnName": "issues",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "promptLevel",
+            "columnName": "promptLevel",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "name_plan",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `fullName` TEXT NOT NULL, `targetChars` TEXT NOT NULL, `priorityMode` TEXT NOT NULL, `currentStage` TEXT, `recognitionReady` INTEGER NOT NULL, `guidedWritingReady` INTEGER NOT NULL, `independentWritingReady` INTEGER NOT NULL, `signingReady` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fullName",
+            "columnName": "fullName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetChars",
+            "columnName": "targetChars",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priorityMode",
+            "columnName": "priorityMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentStage",
+            "columnName": "currentStage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "recognitionReady",
+            "columnName": "recognitionReady",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "guidedWritingReady",
+            "columnName": "guidedWritingReady",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "independentWritingReady",
+            "columnName": "independentWritingReady",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "signingReady",
+            "columnName": "signingReady",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bb43d43ef468757b9a2eb24553826914')"
+    ]
+  }
+}

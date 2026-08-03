@@ -285,3 +285,134 @@ App 不是被动工具，而是**主动陪伴**：机器人会主动问"今天�
 | 语音覆盖全部操作（设置/选角色等） | ⏳ |
 | TalkBack 语义 / 高 fontScale | ⏳ |
 | 真机验证（语音端到端/回声） | ⏳ P0 |
+
+---
+
+## 11. 架构一：全界面 Agent 可控 + 多层组件 Skill 化
+
+> 用户要求：**所有界面与按钮都可语音控制，都可被 AI agent 控制**——包括界面内元素（米字格、笔画）。定义多层级的组件，形成 plugin/skill 供 agent 灵活调用。
+
+### 11.1 目标
+
+教学 agent（LLM）不仅能"说话"，还能**操作界面的任意元素**：切换页面、点卡片、控制米字格揭示笔画、切换描红模式等。语音与 agent 控制是同一套能力的两端（用户说 = 语音命令；agent 决策 = 工具调用）。
+
+### 11.2 多层组件层级（从粗到细）
+
+```
+应用 → 页面（Screen）→ 卡片/区块（Card）→ 基础元素（按钮/文字/输入框）
+     → 领域组件（米字格 MizigeGrid）→ 元素级（笔画/网格线/描红层）
+```
+
+每层都可被：
+- **语音控制**（用户说"学我的名字"→ 点主卡）
+- **Agent 工具调用**（agent 调 `navigate_screen` / `tap_card` / `mizige_reveal`）
+
+### 11.3 Skill / Plugin 注册机制
+
+- 每个可操作组件注册为**结构化 skill**：`{ 名称, 触发词（语音/意图）, 作用范围（哪层）, 参数, 执行动作, 可读说明（TTS 用） }`
+- 例：
+  - `navigate_screen`（跳转页面）
+  - `start_name_learning`（学我的名字，默认路径）
+  - `search_char`（想学一个字：输入/搜索卡片）
+  - `start_review`（复习）
+  - `mizige_set_mode`（米字格模式：看/跟写/独立写）⏳
+  - `mizige_reveal_stroke`（揭示第 N 笔）⏳
+  - `mizige_set_tracing`（开启浅灰描红，用户跟着描摹）⏳
+  - `mizige_stroke_sequence`（按笔顺一笔一画引导）⏳
+- Agent 通过工具调用表获取可用 skill 清单（随 ui_state 注入，类似 DESIGN.md §Agent 工具系统）
+- ⏳ 当前实现：语音命令散落（VoiceCommandParser/IntentResolver/learnCommand）+ Agent 工具部分已有（show_character/show_options/navigate_screen 等 SYSTEM-PROMPT 已声明），**统一为 skill 注册表重构待做**
+
+### 11.4 米字格/笔画的 Agent 控制（重点引导场景）
+
+用户设想的重要引导能力：
+1. **描红**：显示浅灰色字形，用户可跟随描摹（`mizige_set_tracing(true)`）
+2. **笔画顺序引导**：控制揭示顺序，引导一笔一画写（`mizige_reveal_stroke(N)` + `mizige_stroke_sequence`）
+3. 结合现有阶段机（INTRODUCE→RECOGNIZE→DEMONSTRATE→GUIDED_WRITE→INDEPENDENT_WRITE）：
+   - DEMONSTRATE 可展示描红 + 笔顺动画 ⏳
+   - GUIDED_WRITE 已支持逐笔揭示（现有 revealStrokes），可扩展为 agent 可控节奏
+- 米字格数据已有（字库 SVG 笔画路径 + 中位线），渲染能力已有（MizigeGrid），缺的是 **agent 控制接口** ⏳
+
+---
+
+## 12. 架构二：自我进化与用户理解机制
+
+> 用户要求：向 **Hermes Agent**（NousResearch，self-improving AI agent）等个人助手学习，吸收"每次自我进化 + 定期梳理 + 自动生成更新 skill + 自我纠正"能力。
+> 调研来源：Hermes Agent 官方仓库（README：closed learning loop / autonomous skill creation / periodic nudges / scheduled audits / Honcho user modeling）；Claude Opus 5 系统提示词泄露版（memory filesystem / skills / skill-creator / 从聊天历史生成记忆）。
+
+### 12.1 调研结论（已核实）
+
+**Hermes Agent 可吸收的机制：**
+1. **闭环学习（closed learning loop）**——任务后 agent 梳理经验，沉淀为技能/记忆
+2. **复杂任务后自动创建技能（autonomous skill creation）**——不需要用户要求
+3. **技能在使用中自我改进（skills self-improve during use）**——技能不是一次写成，随使用修正
+4. **周期性提示维护记忆（periodic nudges）**——agent 主动想起"该整理记忆了"
+5. **定时任务（scheduled automations）**——daily reports / weekly audits，自然语言定义，无人值守
+6. **会话搜索 + LLM 摘要（FTS5 session search + summarization）**——跨会话回忆
+7. **用户建模（Honcho dialectic user modeling）**——持续的辩证式用户理解
+
+**Claude Opus 5 可吸收的机制：**
+1. **memory filesystem**——结构化持久记忆（profile / topics / areas / people / preferences），写"未来 Claude 需要的前置上下文"，**问用户前先查记忆**，版本 token 防并发，写入有严格规则（interview 边问边写、不宣布写入成功、删除仅用户明确要求）
+2. **skills 标准**——SKILL.md 最佳实践文件夹，**写代码/建文件前强制读相关 SKILL.md**，skill-creator 可创建技能
+3. **从聊天历史生成记忆（generate memory from chat history）**
+
+### 12.2 本项目的自我进化设计
+
+**原则：用户不懂这些，不询问是否创建 skill；最多告知"以后想怎么样可以说……"。默认制定任务服务用户。**
+
+#### 每次学习 session 后（每次进化）
+session 结束（已有 `end_session` 结构化总结）→ 追加"自我进化"步骤：
+- 梳理本次**难重点**（哪些字/笔画/阶段卡住，struggles 已有）
+- 梳理 **agent 需改进**（本次教学哪里不好：解释不清楚/节奏太快/重复纠错）
+- 记录**用户习惯**（语速偏好/何时学/喜欢哪些字/常见说法）
+- 记录**被纠正的行为**（用户多次说"不对/不是这个"的地方——agent 理解偏差）
+- 更新**用户模型**（记忆文件，见 12.3）
+- 产出：难重点清单 + agent 改进点 → 存记忆，供下次 session 注入
+
+#### 定期完整梳理（每周，定时任务）
+- 每周自动执行（Hermes scheduled automations 模式）：
+  - 汇总本周所有 session 的难重点/改进点/习惯 → **自动生成或更新 skill**（如"张阿姨对'家'的竖钩总写反，教学时先强调"——更新对应 skill/教学提示）
+  - 完整梳理用户模型（理解加深、偏好变化）
+  - 输出周报（存记忆，不打扰用户；必要时转为教学调整）
+- ⏳ 定时执行器（WorkManager）待实现
+
+#### 记忆结构（借鉴 Opus 5 memory filesystem）
+```
+/profile.md            学习者档案（姓名/称呼/初始水平/语速字号偏好）
+/topics/<char>.md      每个字的学习记录（难点/错误模式/复习排期）
+/areas/name-plan.md    名字学习计划进度
+/preferences.md        偏好（字号档位/语速/是否默认拼音）
+/agent-notes.md        agent 自我改进笔记（被纠正行为/待改进教学点）
+/skills/               agent 可复用的教学 skill（难重点对策/用户特定教法）
+```
+- 原则：写"未来 agent 需要的前置上下文"，session 开始注入；问用户前先查记忆
+- 当前已有雏形：Room 的 character 记录 + session 总结 + 间隔重复——**扩展为记忆文件系统 + agent 读写接口待做** ⏳
+
+#### 技能生命周期（Hermes 模式）
+```
+复杂任务/周梳理 → 识别可复用经验 → 自动创建 skill（不询问）
+→ 使用中验证 → 效果好保留/效果差修正 → 过时移除
+```
+
+#### 自我纠正
+- agent 被多次纠正的行为（用户说"不对"）→ 记录到 agent-notes → 下次 session 注入提示"上次 X 被纠正，注意 Y"
+- 纠正闭环：用户纠正 → 记录 → 下次改进 → 用户不再纠正 = 成功（不再打扰）
+
+#### 不打扰原则
+- 创建/更新 skill、周梳理全部后台自动
+- 用户可见的仅：教学行为变化（更懂用户了）+ 偶尔一句"以后想怎么样，可以直接说……"
+
+---
+
+## 13. 两个架构的实现状态
+
+| 架构项 | 状态 |
+|--------|------|
+| 语音控制（用户侧命令） | ✅ main（散落命令，待 skill 化重构） |
+| Agent 工具（navigate_screen/show_* 等） | ✅ main（SYSTEM-PROMPT 已声明） |
+| 统一 skill 注册表（多层组件） | ⏳ |
+| 米字格 agent 控制（描红/笔顺引导） | ⏳ |
+| session 结束自我进化（难重点/改进点/习惯/被纠正） | ⏳（end_session 总结已有，进化步骤未实现） |
+| 记忆文件系统（profile/topics/preferences/agent-notes） | ⏳（Room 雏形，agent 读写接口未实现） |
+| 周梳理定时任务 + 自动生成 skill | ⏳ |
+| 技能生命周期（创建/使用中改进/移除） | ⏳ |
+| 跨会话回忆（session 搜索+摘要） | ⏳ |

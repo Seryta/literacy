@@ -113,7 +113,16 @@ class SpeechInputManager(context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
         }
-        r.startListening(intent)
+        // 无 RECORD_AUDIO 权限时 startListening 可能抛 SecurityException（跳引导未授权场景）——不能崩
+        try {
+            r.startListening(intent)
+        } catch (e: SecurityException) {
+            onResult?.invoke(SpeechOutcome.Error("没有麦克风权限"))
+            return false
+        } catch (e: Exception) {
+            onResult?.invoke(SpeechOutcome.Error("语音识别启动失败，请重试"))
+            return false
+        }
         return true
     }
 
@@ -159,6 +168,8 @@ object VoiceCommandParser {
             t.contains("建档") || t.contains("名字") || t.contains("教我写") -> Action.OpenProfile
             // 学X字 / 我想学X / 复习X —— 提取目标汉字
             else -> {
+                // 否定/结束句不触发学字导航（"我不学了"取"了"字会误导航）
+                if (t.contains("不") || t.contains("别") || t.contains("没")) return Action.Unknown
                 val char = Regex("学['\"]?([\\u4e00-\\u9fa5])['\"]?字").find(t)?.groupValues?.get(1)
                     ?: Regex("学([\\u4e00-\\u9fa5])").find(t)?.groupValues?.get(1)
                     ?: t.filter { it.isLetter() && it.code in 0x4e00..0x9fff }.lastOrNull()?.toString()

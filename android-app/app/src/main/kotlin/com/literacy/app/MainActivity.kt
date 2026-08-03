@@ -110,6 +110,24 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     }
     // 当前页的自动监听重启器（悬浮球点击时调用：让用户立即说话）；非自动监听页为空 → 悬浮球走一次性识别
     val autoListenRestart = remember { mutableStateOf<(() -> Unit)?>(null) }
+    // 后台生命周期：退后台停监听（隐私+电池——老人不会自己关麦克风），回前台自动监听页恢复
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                    speech.cancel()
+                    listening = false
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    autoListenRestart.value?.invoke()   // 学习页/引导：回前台恢复自动监听
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -287,6 +305,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         current = mascot,
                         onSelect = {
                             mascot = it
+                            settings.mascotId = it.variant.id   // 持久化：重启后保持选择
                             scope.launch { snackbarHostState.showSnackbar("已选「${it.variant.label}」") }
                         },
                         onBack = { screen = Screen.SETTINGS },
@@ -341,6 +360,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                             autoListenRestart.value = null
                             speech.cancel()   // 离开学习页停自动监听
                             listening = false
+                            learnPartial = ""   // 离页清字幕，避免下次进入显示旧字幕
                             vm.releaseTts()   // review-09 P1-11：离开释放 TTS（Activity 级 VM 不随 composable 销毁）
                             vm.cancelInFlight()   // review-10 P1-11：离页取消在途请求
                             screen = Screen.HOME

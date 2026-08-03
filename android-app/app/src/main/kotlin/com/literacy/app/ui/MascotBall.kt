@@ -293,8 +293,10 @@ fun MascotBall(
         ),
         label = "mascotFloatY",
     )
-    // 拖拽避让（用户拖到哪停哪，松手保持）
+    // 拖拽避让（用户拖到哪停哪，松手保持；钳制在屏幕内防拖丢主入口）
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
 
     Box(
         modifier = modifier
@@ -303,7 +305,10 @@ fun MascotBall(
                 detectDragGestures(
                     onDrag = { change, drag ->
                         change.consume()
-                        dragOffset += drag
+                        dragOffset = Offset(
+                            (dragOffset.x + drag.x).coerceIn(-screenW * 0.9f, screenW * 0.9f),
+                            (dragOffset.y + drag.y).coerceIn(-screenH * 0.9f, screenH * 0.9f),
+                        )
                     },
                 )
             }

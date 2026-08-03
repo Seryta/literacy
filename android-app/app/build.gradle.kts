@@ -140,6 +140,9 @@ dependencies {
     // api_key 加密存储（EncryptedSharedPreferences；1.1.0 后无稳定版但功能稳定，minSdk 26 兼容）
     implementation("androidx.security:security-crypto:1.1.0-alpha07")
 
+    // JVM 单元测试（语音解析规则等纯 Kotlin 逻辑）
+    testImplementation("junit:junit:4.13.2")
+
     // ---- androidTest（instrumented；App 层零测试空白）----
     androidTestImplementation("androidx.room:room-testing:2.6.1")   // MigrationTestHelper
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

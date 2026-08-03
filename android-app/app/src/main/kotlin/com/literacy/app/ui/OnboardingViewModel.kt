@@ -124,13 +124,18 @@ class OnboardingViewModel(
         clearPartial()   // 回合结束收起实时字幕
         when (ui.step) {
             Step.WELCOME, Step.PICK_MASCOT -> {
-                val idx = pickMascotIndex(text)
-                if (idx != null) onSelectMascot(idx)
-                else ui = ui.copy(robotText = "没听清你说的是第几个，再说一次，比如“第一个”。")
+                // WELCOME 步说"开始"推进；PICK_MASCOT 说"第几个"选宠物
+                if (ui.step == Step.WELCOME && isYes(text)) {
+                    goPickMascot()
+                } else {
+                    val idx = pickMascotIndex(text)
+                    if (idx != null) onSelectMascot(idx)
+                    else ui = ui.copy(robotText = if (ui.step == Step.WELCOME) "点下面的“开始”按钮，或者直接说“开始”。" else "没听清你说的是第几个，再说一次，比如“第一个”。")
+                }
             }
             Step.ASK_NAME -> {
                 val name = extractName(text)
-                if (name.length >= 2) {   // 至少 2 个字才算有效姓名（单字名允许？先要求 ≥1，单字姓名单字名兜底输入）
+                if (name.isNotEmpty()) {   // 单字名也接受（真名单字名用户不被拒）
                     ui = ui.copy(pendingName = name)
                     goConfirmName()
                 } else {
@@ -149,11 +154,12 @@ class OnboardingViewModel(
                 if (name.isNotEmpty()) { ui = ui.copy(pendingName = name); goGuideStart() }
             }
             Step.GUIDE_START -> {
+                // 否定/延后词优先（"晚点再学"/"等一会再学"不能被"学"误判为开始）
                 when {
+                    text.contains("等") || text.contains("不") || text.contains("晚") || text.contains("以后") ||
+                        text.contains("明天") || text.contains("回头") -> finish(startNow = false)
                     text.contains("开始") || text.contains("好") || text.contains("行") || text.contains("学") || text.contains("走吧") ->
                         finish(startNow = true)
-                    text.contains("等") || text.contains("不") || text.contains("晚") || text.contains("以后") ->
-                        finish(startNow = false)
                     else -> ui = ui.copy(robotText = "说“开始”我们就开始学你的名字；或者点“等一会”。")
                 }
             }
@@ -225,7 +231,19 @@ class OnboardingViewModel(
     }
 
     // ── 语音解析（本地规则，不依赖 LLM） ────────────────────────────
-    private fun pickMascotIndex(text: String): Int? {
+    private fun pickMascotIndex(text: String): Int? = OnboardingVoiceRules.pickMascotIndex(text)
+
+    private fun extractName(text: String): String = OnboardingVoiceRules.extractName(text)
+
+    private fun isNo(text: String): Boolean = OnboardingVoiceRules.isNo(text)
+
+    private fun isYes(text: String): Boolean = OnboardingVoiceRules.isYes(text)
+}
+
+/** 引导语音解析规则（纯 Kotlin，可 JVM 单元测试）。 */
+object OnboardingVoiceRules {
+    /** "第N个" → 角色下标（0-based）；无匹配 null。 */
+    fun pickMascotIndex(text: String): Int? {
         val cn = mapOf("一" to 1, "两" to 2, "二" to 2, "三" to 3, "四" to 4, "五" to 5, "六" to 6, "七" to 7, "八" to 8)
         val m = Regex("第([一二两三四五六七八1-8])个").find(text.trim()) ?: return null
         val g = m.groupValues[1]
@@ -233,20 +251,22 @@ class OnboardingViewModel(
         return if (n in 1..Mascots.candidates.size) n - 1 else null
     }
 
-    private fun extractName(text: String): String {
+    /** 从语音转写提取姓名（去前缀 + 汉字，取前 4 字）。 */
+    fun extractName(text: String): String {
         var t = text.trim().trimEnd('。', '！', '？', '.', '!', '?')
-        for (prefix in listOf("我叫", "我的名字是", "名字叫", "我是", "我叫作")) {
+        for (prefix in listOf("我叫", "我的名字是", "名字叫", "我的名字叫", "我是", "我叫作")) {
             if (t.startsWith(prefix)) { t = t.removePrefix(prefix); break }
         }
-        // 只保留汉字，取 1-4 个（单字名也接受，兜底输入可补全）
         return t.filter { it in '\u4e00'..'\u9fff' }.take(4)
     }
 
-    private fun isNo(text: String): Boolean =
+    fun isNo(text: String): Boolean =
         text.contains("不对") || text.contains("不是") || text.contains("错了") || text.contains("没有") || text.contains("不是这个")
 
-    private fun isYes(text: String): Boolean =
-        text.contains("对") || text.contains("是") || text.contains("嗯") || text.contains("没错") || text.contains("好")
+    fun isYes(text: String): Boolean {
+        if (isNo(text)) return false   // "不对"/"不是" 含"对"/"是"，必须先排除否定
+        return text.contains("对") || text.contains("是") || text.contains("嗯") || text.contains("没错") || text.contains("好")
+    }
 }
 
 /** OnboardingViewModel 工厂（settings/store 注入）。 */

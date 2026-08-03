@@ -182,7 +182,7 @@ fun HomeScreen(
                         Text("先复习巩固，再学新字效果更好", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Button(
-                        onClick = { onStartLearning(namePlan?.targetChars?.firstOrNull() ?: "家") },
+                        onClick = { onStartLearning("${namePlan?.targetChars?.firstOrNull() ?: "家"}:review") },   // review：进复习模式（不是学习模式）
                         shape = MaterialTheme.shapes.medium,
                     ) { Text("去复习") }
                 }

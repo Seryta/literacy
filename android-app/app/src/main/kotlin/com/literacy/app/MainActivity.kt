@@ -283,10 +283,11 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         val ok = startAutoListen(homeOnText, {})
                         listening = ok
                     }
-                    // 进入首页延迟主动招呼（陪伴感：不识字用户不会被"静默等待"困住）
+                    // 初始问候（仅一次）：引导后的第一次进首页问"今天想学什么"；之后靠规划推进不反复问
                     LaunchedEffect(Unit) {
                         kotlinx.coroutines.delay(1500)
-                        if (screen == Screen.HOME) {
+                        if (screen == Screen.HOME && !settings.initialGreetDone) {
+                            settings.initialGreetDone = true
                             bubbleText.value = "今天想学什么？直接说，比如：我想学家"
                             homeTts.speak("今天想学什么？直接告诉我，比如：我想学家。")
                         }

@@ -127,6 +127,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
         set(v) = prefs.edit().putBoolean(KEY_ONBOARDING_DONE, v).apply()
 
+    /** 初始问候是否已说过（引导后的第一次进首页问"今天想学什么"，之后靠规划不反复问）。 */
+    var initialGreetDone: Boolean
+        get() = prefs.getBoolean(KEY_INITIAL_GREET_DONE, false)
+        set(v) = prefs.edit().putBoolean(KEY_INITIAL_GREET_DONE, v).apply()
+
     val hasApiKey: Boolean get() = apiKey.isNotBlank()
 
     companion object {
@@ -138,6 +143,7 @@ class AppSettings(context: Context) {
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_MASCOT_ID = "mascot_id"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
+        private const val KEY_INITIAL_GREET_DONE = "initial_greet_done"
 
         /** 默认 provider：deepseek（pi 同款 openai-completions 格式）。 */
         const val DEFAULT_BASE_URL = "https://api.deepseek.com"

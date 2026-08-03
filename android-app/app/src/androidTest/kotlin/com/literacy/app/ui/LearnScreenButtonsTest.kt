@@ -6,8 +6,11 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.literacy.agent.model.LlmOutput
@@ -125,5 +128,78 @@ class LearnScreenButtonsTest {
         rule.onNodeWithText("✓认对").assertDoesNotExist()
         rule.onNodeWithText("✗认错").assertDoesNotExist()
         rule.onNode(hasText("复习模式", substring = true)).assertExists()   // 确认确实在复习界面
+    }
+
+    // ---- review-11 批B：P1-4.1 show_sentence（sentence_text 键）/ P1-4.2 show_pinyin 消费 / P1-5 clear_grid 重置 ----
+
+    @Test
+    fun showSentence_rendersCanonicalSentenceTextArgument() {
+        // canonical 参数是 sentence_text（此前 UI 只读 text/sentence/content 漏渲染，core 校验也拒绝）
+        val vm = newViewModel(listOf(
+            LlmOutput("请看这个句子", listOf(ToolCall("show_sentence", mapOf("sentence_text" to "我家有三口人。")))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家")
+        waitUntil(vm, label = "show_sentence 渲染") {
+            rule.onAllNodesWithText("我家有三口人。").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun showPinyin_hiddenInRecognize_notLeakAnswer() {
+        // RECOGNIZE 检测阶段：模型 show_pinyin 也不得渲染（拼音是答案，看着字形读）
+        val vm = newViewModel(listOf(
+            LlmOutput("开始", listOf(ToolCall("advance_phase"), ToolCall("show_pinyin", mapOf("char" to "家")))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家")
+        waitUntil(vm, label = "进入 recognize") { vm.ui.phase == "recognize" }
+        rule.waitForIdle()
+        rule.onNode(hasText("拼音：", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun showPinyin_renderedOutsideRecognize() {
+        // 教学上下文（DEMONSTRATE）：模型 show_pinyin 渲染认读帮助
+        val vm = newViewModel(listOf(
+            LlmOutput("开始", listOf(ToolCall("advance_phase"))),
+            LlmOutput("认对了", listOf(ToolCall("advance_phase"))),
+            LlmOutput("提示拼音", listOf(ToolCall("show_pinyin", mapOf("char" to "家")))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家")
+        waitUntil(vm, label = "进入 recognize") { vm.ui.phase == "recognize" }
+        vm.onSimulatedRecognition(true)   // 认对（本地判定成功）→ 模型 advance_phase → DEMONSTRATE
+        waitUntil(vm, label = "进入 demonstrate") { vm.ui.phase == "demonstrate" }
+        vm.onUserInput("看看拼音")
+        waitUntil(vm, label = "拼音渲染") {
+            rule.onAllNodes(hasText("拼音：", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun clearGrid_resetsDrawnCount() {
+        // 清屏只清画面不清提交数据：画一笔后模型 clear_grid，已画笔数必须归零（修复前只随 phase 清）
+        val vm = newViewModel(listOf(
+            LlmOutput("开始", emptyList()),
+            LlmOutput("清屏", listOf(ToolCall("clear_grid"))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:independent_write")
+        waitUntil(vm, label = "进入独立写") { vm.ui.phase == "independent_write" }
+        rule.onNodeWithTag("mizige_grid").performTouchInput {
+            swipe(
+                start = center.copy(x = center.x - 50f, y = center.y - 50f),
+                end = center.copy(x = center.x + 50f, y = center.y + 50f),
+                durationMillis = 200,
+            )
+        }
+        rule.waitForIdle()
+        rule.onNode(hasText("已画 1/", substring = true)).assertExists()
+        // clear_grid 工具 → clearGridSignal++ → 轨迹/计数重置（与 MizigeGrid resetKey 同步）
+        vm.onUserInput("请清一下屏")
+        waitUntil(vm, label = "clear_grid 后重置") {
+            rule.onAllNodes(hasText("已画 0/", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 }

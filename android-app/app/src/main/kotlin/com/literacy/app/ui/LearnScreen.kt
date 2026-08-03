@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +31,9 @@ fun LearnScreen(
     var input by remember { mutableStateOf("") }
     var strokeCount by remember { mutableStateOf(0) }
     var drawnLibrary by remember { mutableStateOf<List<List<Pair<Float, Float>>>>(emptyList()) }
-    LaunchedEffect(ui.phase) { drawnLibrary = emptyList(); strokeCount = 0 }
+    // review-11 P1-5：清屏（clear_grid）也重置提交数据——此前只随 phase 重置，清屏后点"完成书写"
+    // 会把旧轨迹一并提交（与 Canvas 重建的 resetKey 保持一致）
+    LaunchedEffect(ui.phase, viewModel.clearGridSignal) { drawnLibrary = emptyList(); strokeCount = 0 }
     val focusManager = LocalFocusManager.current
 
     Column(
@@ -108,7 +111,8 @@ fun LearnScreen(
             },
             modifier = Modifier
                 .size(300.dp)
-                .padding(8.dp),
+                .padding(8.dp)
+                .testTag("mizige_grid"),   // 测试定位（androidTest 手势绘制）
         )
 
         // 独立写阶段：画完多笔后点"完成书写"提交整体评估（MASTERY-CRITERIA §4）
@@ -201,12 +205,34 @@ fun LearnScreen(
             when (tool.name) {
                 "show_sentence" -> {
                     // review-10 P1-5：参数字段兼容（text/sentence/content）
-                    (tool.arguments["text"] ?: tool.arguments["sentence"] ?: tool.arguments["content"])
+                    // review-11 P1-4.1：canonical 参数 sentence_text 是校验/读取主键（此前 UI 只读旧键漏渲染）
+                    (tool.arguments["sentence_text"]
+                        ?: tool.arguments["text"] ?: tool.arguments["sentence"] ?: tool.arguments["content"])
                         ?.toString()?.takeIf { it.isNotBlank() }?.let { sentence ->
                         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                             Text(sentence, modifier = Modifier.padding(10.dp), fontSize = 16.sp)
                         }
                         Spacer(Modifier.height(4.dp))
+                    }
+                }
+                // review-11 P1-4.2：show_pinyin/show_character 此前只记录不消费（认读帮助/独立写提示看不到）——
+                // 这里渲染；RECOGNIZE 检测阶段不显示拼音（拼音是答案，与 hidePinyin 同约束）；
+                // 复习 recall 的展示工具已被 ReplayRunner 本地拒绝（GT-051），不会到达 UI
+                "show_pinyin" -> {
+                    if (!hidePinyin && !ui.sessionEnded) {
+                        ui.pinyin.takeIf { it.isNotBlank() }?.let { py ->
+                            Text("拼音：$py", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(2.dp))
+                        }
+                    }
+                }
+                "show_character" -> {
+                    // 独立写提示：模型 reveal 时覆盖隐藏（主标题 "？" 场景也能看到字形）
+                    if (!ui.sessionEnded) {
+                        ui.char.takeIf { it.isNotBlank() }?.let { c ->
+                            Text("字形提示：$c", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(2.dp))
+                        }
                     }
                 }
                 "highlight_stroke" -> {

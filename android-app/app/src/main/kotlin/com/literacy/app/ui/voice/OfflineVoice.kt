@@ -191,11 +191,11 @@ class OfflineVoiceEngine(
                     while (listening && !cancelled) {
                         val n = recorder.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
-                        // 静音检测（RMS）
+                        // 静音检测（RMS）：阈值调低（真机轻声也能触发）；有识别文本即视为正在说话
                         var rms = 0f
                         for (i in 0 until n) rms += shortBuf[i] * shortBuf[i]
                         rms = kotlin.math.sqrt(rms / n)
-                        if (rms < 300f) {   // 静音阈值
+                        if (rms < 80f) {   // 静音阈值（低：避免轻声说话被当静音）
                             silentMs += n * 1000L / sampleRate
                             if (silentMs > 800L) break   // 静音 0.8s → 一句话结束
                         } else {
@@ -207,17 +207,24 @@ class OfflineVoiceEngine(
                         stream.acceptWaveform(floatBuf, sampleRate)
                         engine.decode(stream)
                         val text = engine.getResult(stream).text
-                        if (text.isNotBlank() && text != lastPartial) {
-                            lastPartial = text
-                            fullText = text
-                            val t = text
-                            mainHandler.post { onPartial(t) }   // 实时字幕
+                        if (text.isNotBlank()) {
+                            silentMs = 0L   // 有识别文本视为正在说话（停顿不截断）
+                            if (text != lastPartial) {
+                                lastPartial = text
+                                fullText = text
+                                val t = text
+                                Log.d(tag, "实时转写: $t")
+                                mainHandler.post { onPartial(t) }   // 实时字幕
+                            }
                         }
                     }
                     // 一句话结束：回调结果
                     if (fullText.isNotBlank()) {
                         val t = fullText
+                        Log.d(tag, "识别结果: $t")
                         mainHandler.post { onResult?.invoke(t) }
+                    } else {
+                        Log.d(tag, "识别超时/无结果（静音）")
                     }
                     if (!autoRestart) break   // 不自动重听则结束
                 }

@@ -146,7 +146,7 @@ fun OnboardingScreen(
         Spacer(Modifier.height(4.dp))
 
         // ── 选宠物（PICK_MASCOT）：纵向大卡片列表（从上到下，说"第几个"）──
-        if (ui.step == OnboardingViewModel.Step.PICK_MASCOT || ui.step == OnboardingViewModel.Step.WELCOME) {
+        if (ui.step == OnboardingViewModel.Step.PICK_MASCOT) {   // 仅选宠物步显示列表（欢迎步先语音包，不显示）
             Spacer(Modifier.height(16.dp))
             Mascots.candidates.forEachIndexed { index, mascot ->
                 val selected = index == ui.mascotIndex
@@ -248,21 +248,24 @@ fun OnboardingScreen(
         }
 
         // ── 语音状态：引导阶段自动持续听，无需任何点击 ──
-        Spacer(Modifier.height(16.dp))
-        Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                if (listening) "🎤 我在听，你直接说就行" else "🎤 没听清时，说慢一点再试一次",
-                fontSize = 17.sp,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(vertical = 14.dp, horizontal = 12.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
+        // 语音包准备（VOICE_PREP）步骤不显示（先专注下载，避免误以为语音已就绪）
+        if (ui.step != OnboardingViewModel.Step.VOICE_PREP) {
+            Spacer(Modifier.height(16.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (listening) "🎤 我在听，你直接说就行" else "🎤 没听清时，说慢一点再试一次",
+                    fontSize = 17.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(vertical = 14.dp, horizontal = 12.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(8.dp))
 
         // ── 语音包准备（VOICE_PREP）：不可跳过（语音老师是使用前提）──
         if (ui.step == OnboardingViewModel.Step.VOICE_PREP && !ui.voiceModelsReady) {
@@ -274,13 +277,13 @@ fun OnboardingScreen(
             ) {
                 Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                     Text("语音老师准备", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "下载语音包后，女声朗读和语音识别完全离线、更清楚。\n约 210MB，建议连 Wi-Fi 下载。",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "下载语音包：女声朗读 + 离线识别，约 210MB（建议 Wi-Fi）",
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                     if (ui.voiceDownloading) {
                         LinearProgressIndicator(
                             progress = { ui.voiceDownloadProgress / 100f },
@@ -292,9 +295,18 @@ fun OnboardingScreen(
                         // 下载失败：重试为主；失败 2 次后才出现弱化"暂时用系统语音"出口
                         Text(
                             "下载失败，请检查网络和 Wi-Fi 后再试。",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error,
                         )
+                        if (ui.voiceError.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "原因：${ui.voiceError}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
                         Button(
                             onClick = { viewModel.startVoiceDownload() },
@@ -328,7 +340,10 @@ fun OnboardingScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        TextButton(onClick = onSkip) { Text("跳过引导（以后再说）", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // 语音包准备步骤不可跳过（含整体跳过引导）——语音老师是使用前提
+        if (ui.step != OnboardingViewModel.Step.VOICE_PREP) {
+            TextButton(onClick = onSkip) { Text("跳过引导（以后再说）", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
         Spacer(Modifier.height(16.dp))
     }
 }

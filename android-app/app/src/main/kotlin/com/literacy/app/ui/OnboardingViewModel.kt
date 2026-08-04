@@ -42,6 +42,7 @@ class OnboardingViewModel(
         val voiceDownloadDone: Boolean = false,     // 本次引导内是否已下载完成
         val voiceFailCount: Int = 0,                // 语音包下载失败次数（>=2 出现弱化系统语音出口）
         val voiceModelsReady: Boolean = false,      // 模型是否已就绪
+        val voiceError: String = "",                // 最近一次下载失败的具体原因（排查用）
     )
 
     var ui by mutableStateOf(ObState())
@@ -324,6 +325,7 @@ class OnboardingViewModel(
                 ui = ui.copy(
                     voiceDownloading = false,
                     voiceFailCount = failCount,
+                    voiceError = e.message ?: e.javaClass.simpleName,
                     robotText = if (failCount >= 2) "下载失败。检查一下网络和 Wi-Fi，再试一次。" else "下载失败了，检查一下网络，然后重试。",
                 )
             }

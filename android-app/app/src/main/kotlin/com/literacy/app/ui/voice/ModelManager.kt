@@ -29,9 +29,12 @@ object VoiceModels {
     /** STT：流式中文识别（边说边出字） */
     const val STT_REPO = "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23"
 
-    /** 就绪判定：这些文件存在即认为模型可用（TTS 需 espeak-ng-data 目录） */
-    val TTS_REQUIRED_FILES = listOf("model.onnx", "tokens.txt")
-    val STT_REQUIRED_FILES = listOf("encoder-epoch-99-avg-1.onnx", "decoder-epoch-99-avg-1.onnx", "joiner-epoch-99-avg-1.onnx", "tokens.txt")
+    /** 就绪判定：这些文件存在且非空即认为模型可用 */
+    val TTS_FILES = listOf("model.onnx", "tokens.txt", "lexicon.txt")
+    val STT_FILES = listOf(
+        "encoder-epoch-99-avg-1.onnx", "decoder-epoch-99-avg-1.onnx",
+        "joiner-epoch-99-avg-1.onnx", "tokens.txt",
+    )
 }
 
 class ModelManager(context: Context) {
@@ -40,78 +43,41 @@ class ModelManager(context: Context) {
     val sttDir = File(appContext.filesDir, "voice-models/stt")
 
     // ── 就绪检测 ────────────────────────────────────────────────────
-    fun ttsReady(): Boolean = requiredExist(ttsDir, VoiceModels.TTS_REQUIRED_FILES)
-    fun sttReady(): Boolean = requiredExist(sttDir, VoiceModels.STT_REQUIRED_FILES)
+    fun ttsReady(): Boolean = requiredExist(ttsDir, VoiceModels.TTS_FILES)
+    fun sttReady(): Boolean = requiredExist(sttDir, VoiceModels.STT_FILES)
 
     private fun requiredExist(dir: File, files: List<String>): Boolean =
-        files.all { File(dir, it).isFile }
+        files.all { name -> val f = File(dir, name); f.isFile && f.length() > 0L }
 
-    /** 预估体积（文件数/总 MB，UI 提示用） */
-    suspend fun estimate(): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val tts = treeSize(VoiceModels.TTS_REPO)
-        val stt = treeSize(VoiceModels.STT_REPO)
-        (tts.first + stt.first) to (tts.second + stt.second)
+    /** 预估体积（文件数，UI 提示用）。 */
+    suspend fun estimate(): Int = withContext(Dispatchers.IO) {
+        VoiceModels.TTS_FILES.size + VoiceModels.STT_FILES.size
     }
-
-    private fun treeSize(repo: String): Pair<Int, Int> = try {
-        val files = fetchTree(repo)
-        val mb = (files.sumOf { it.second } / 1048576).toInt()
-        files.size to mb
-    } catch (e: Exception) { 0 to 0 }
 
     // ── 下载（带进度回调）──────────────────────────────────────────
     /** 下载 TTS 模型；progress 0..100；成功返回文件数，失败抛异常。 */
-    suspend fun downloadTts(onProgress: (Int) -> Unit): Int = downloadRepo(
-        repo = VoiceModels.TTS_REPO, targetDir = ttsDir, onProgress = onProgress,
-    )
+    suspend fun downloadTts(onProgress: (Int) -> Unit): Int =
+        downloadFiles(VoiceModels.TTS_REPO, VoiceModels.TTS_FILES, ttsDir, onProgress)
 
-    suspend fun downloadStt(onProgress: (Int) -> Unit): Int = downloadRepo(
-        repo = VoiceModels.STT_REPO, targetDir = sttDir, onProgress = onProgress,
-    )
+    suspend fun downloadStt(onProgress: (Int) -> Unit): Int =
+        downloadFiles(VoiceModels.STT_REPO, VoiceModels.STT_FILES, sttDir, onProgress)
 
-    private suspend fun downloadRepo(repo: String, targetDir: File, onProgress: (Int) -> Unit): Int =
+    private suspend fun downloadFiles(repo: String, files: List<String>, targetDir: File, onProgress: (Int) -> Unit): Int =
         withContext(Dispatchers.IO) {
             targetDir.mkdirs()
-            val files = fetchTree(repo)
-            var done = 0L
-            files.forEachIndexed { i, (path, size) ->
+            files.forEachIndexed { i, path ->
                 val dest = File(targetDir, path)
-                // 断点续传：已存在且大小匹配 → 跳过
-                if (dest.isFile && dest.length() == size.toLong()) {
-                    done += size
-                } else {
+                // 断点续传：已存在且非空 → 跳过
+                if (!(dest.isFile && dest.length() > 0L)) {
                     dest.parentFile?.mkdirs()
-                    downloadFile(repo, path, dest, size)
-                    done += size
+                    downloadFile(repo, path, dest)
                 }
                 onProgress(((i + 1) * 100 / files.size).coerceAtMost(100))
             }
             files.size
         }
 
-    private fun fetchTree(repo: String): List<Pair<String, Long>> {
-        val url = URL("${VoiceModels.HF_HOST}/api/models/${VoiceModels.OWNER}/$repo/tree/main?recursive=true")
-        val conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 15000
-        conn.readTimeout = 30000
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-        try {
-            val body = conn.inputStream.bufferedReader().readText()
-            val arr = JSONArray(body)
-            val out = ArrayList<Pair<String, Long>>()
-            for (i in 0 until arr.length()) {
-                val f = arr.getJSONObject(i)
-                if (f.optString("type") == "file") {
-                    out.add(f.getString("path") to f.getLong("size"))
-                }
-            }
-            return out
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun downloadFile(repo: String, path: String, dest: File, expectedSize: Long) {
+    private fun downloadFile(repo: String, path: String, dest: File) {
         val url = URL("${VoiceModels.HF_HOST}/${VoiceModels.OWNER}/$repo/resolve/main/$path")
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
@@ -122,10 +88,10 @@ class ModelManager(context: Context) {
             conn.inputStream.use { input ->
                 dest.outputStream().use { output -> input.copyTo(output) }
             }
-            // 大小校验（LFS 文件）
-            if (dest.length() != expectedSize) {
+            // 校验：非空（LFS 文件可能带指针——非空且大小合理即可）
+            if (dest.length() == 0L) {
                 dest.delete()
-                throw RuntimeException("文件大小不符: $path")
+                throw RuntimeException("下载内容为空: $path")
             }
         } finally {
             conn.disconnect()

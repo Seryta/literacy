@@ -56,7 +56,7 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it; saved = false; saveFailed = false },
-                    label = { Text("API Key（如 sk-...）") },
+                    label = { Text("API Key") },
                     singleLine = true,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),   // review-05 P2-3：掩码显示
                     modifier = Modifier.fillMaxWidth(),
@@ -101,7 +101,7 @@ fun SettingsScreen(
 
                 if (saved) {
                     Spacer(Modifier.height(8.dp))
-                    Text("已保存（仅存本机）", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                    Text("已保存，仅存本机", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (saveFailed) {
                     Spacer(Modifier.height(8.dp))
@@ -111,7 +111,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "说明：API Key 仅存储在本机，用于调用 AI 老师。\n" +
-                        "默认 deepseek（OpenAI 兼容格式），支持改为其他兼容 Provider。",
+                        "默认 deepseek，OpenAI 兼容格式，支持改为其他兼容 Provider。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -135,7 +135,7 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .height(48.dp),
                         shape = MaterialTheme.shapes.medium,
-                    ) { Text("选一个小伙伴（角色示例）", fontSize = 16.sp) }
+                    ) { Text("选一个小伙伴", fontSize = 16.sp) }
                     Spacer(Modifier.height(6.dp))
                     listOf("guided_write" to "直达跟写", "independent_write" to "直达独立写", "review" to "直达复习").forEach { (stage, label) ->
                         OutlinedButton(

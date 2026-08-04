@@ -107,7 +107,7 @@ class OnboardingViewModel(
             robotText = reason,
             showOptions = emptyList(),
             showInput = true,
-            inputLabel = "你的名字（也可以直接打字）",
+            inputLabel = "你的名字",
         )
     }
 
@@ -158,7 +158,7 @@ class OnboardingViewModel(
                         VoicePrepIntent.DOWNLOAD -> startVoiceDownload()
                         VoicePrepIntent.USE_SYSTEM -> useSystemVoice()
                         VoicePrepIntent.REFUSE ->
-                            ui = ui.copy(robotText = "语音老师很重要，先下载好再开始（建议连 Wi-Fi）。")
+                            ui = ui.copy(robotText = "语音老师很重要，先下载好再开始，建议连 Wi-Fi。")
                         VoicePrepIntent.NONE ->
                             ui = ui.copy(robotText = "说“下载”就开始下载语音包。")
                     }
@@ -171,7 +171,7 @@ class OnboardingViewModel(
                     idx != null -> onSelectMascot(idx)
                     text.contains("随便") || text.contains("跳过") || text.contains("默认") || text.contains("都可以") -> {
                         ui = ui.copy(mascotIndex = 0)
-                        goAskName("好！那就用${Mascots.candidates[0].variant.label}。那……你叫什么名字呀？说给我听，或者点下面的框打出来。（说“跳过”也可以先不录）")
+                        goAskName("好！那就用${Mascots.candidates[0].variant.label}。那……你叫什么名字呀？说给我听，或者点下面的框打出来。，不想录也可以说“跳过”")
                     }
                     else -> ui = ui.copy(robotText = "没听清你说的是第几个，再说一次，比如“第一个”。不想挑就说“随便”。")
                 }
@@ -187,7 +187,7 @@ class OnboardingViewModel(
                     ui = ui.copy(pendingName = name)
                     goConfirmName()
                 } else {
-                    ui = ui.copy(robotText = "没听清你的名字，能再说一次吗？或者点下面的框打出来。（说“跳过”也可以先不录）")
+                    ui = ui.copy(robotText = "没听清你的名字，能再说一次吗？或者点下面的框打出来。，不想录也可以说“跳过”")
                 }
             }
             Step.CONFIRM_NAME -> {

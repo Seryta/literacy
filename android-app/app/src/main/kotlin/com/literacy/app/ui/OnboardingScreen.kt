@@ -243,7 +243,7 @@ fun OnboardingScreen(
                         .fillMaxWidth()
                         .height(48.dp),
                     shape = MaterialTheme.shapes.large,
-                ) { Text("先不录名字（以后可说 建档）", fontSize = 15.sp) }
+                ) { Text("先不录名字", fontSize = 16.sp) }
             }
         }
 
@@ -280,7 +280,7 @@ fun OnboardingScreen(
                     Text("语音老师准备", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "下载语音包：女声朗读 + 离线识别，约 210MB（建议 Wi-Fi）",
+                        "下载语音包：女声朗读 + 离线识别，约 210MB，建议连 Wi-Fi",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -324,7 +324,7 @@ fun OnboardingScreen(
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 shape = MaterialTheme.shapes.large,
-                            ) { Text("暂时用系统语音（下载完自动切换）", fontSize = 14.sp) }
+                            ) { Text("暂时用系统语音", fontSize = 16.sp) }
                         }
                     } else {
                         Button(
@@ -333,7 +333,7 @@ fun OnboardingScreen(
                                 .fillMaxWidth()
                                 .height(56.dp),
                             shape = MaterialTheme.shapes.large,
-                        ) { Text("下载语音包（女声朗读 + 离线识别）", fontSize = 17.sp) }
+                        ) { Text("下载语音包", fontSize = 18.sp) }
                     }
                 }
             }
@@ -343,7 +343,7 @@ fun OnboardingScreen(
         Spacer(Modifier.height(20.dp))
         // 语音包准备步骤不可跳过（含整体跳过引导）——语音老师是使用前提
         if (ui.step != OnboardingViewModel.Step.VOICE_PREP) {
-            TextButton(onClick = onSkip) { Text("跳过引导（以后再说）", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            TextButton(onClick = onSkip) { Text("跳过引导", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Spacer(Modifier.height(16.dp))
     }

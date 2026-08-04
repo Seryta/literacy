@@ -212,7 +212,7 @@ fun HomeScreen(
                         shape = MaterialTheme.shapes.large,
                     ) { Text("开始学这个字", fontSize = 18.sp) }
                     Spacer(Modifier.height(10.dp))
-                    Text("或直接说：我想学家（语音一直在听）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("或直接说：我想学家", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -334,7 +334,7 @@ fun HomeScreen(
                     }
                     dlError?.let {
                         Spacer(Modifier.height(6.dp))
-                        Text("下载失败：$it（稍后再试，或用系统语音）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Text("下载失败：$it，稍后再试", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }

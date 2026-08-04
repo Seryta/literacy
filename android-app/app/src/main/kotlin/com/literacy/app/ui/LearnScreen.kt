@@ -182,7 +182,7 @@ fun LearnScreen(
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
-                text = ui.text.ifEmpty { "（等待老师说话…）" },
+                text = ui.text.ifEmpty { "等待老师说话…" },
                 fontSize = 18.sp,
                 lineHeight = 26.sp,
                 modifier = Modifier
@@ -199,7 +199,7 @@ fun LearnScreen(
             Text("⏳ 老师思考中…", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
         }
         if (ui.paused) {
-            Text("⏸ 已暂停（其他按钮不可用）", fontSize = 15.sp, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 6.dp))
+            Text("⏸ 已暂停", fontSize = 15.sp, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 6.dp))
         }
         if (ui.providerFailed) {
             // 技术性报错不暴露给用户：温和提示，引导家人协助（不阻塞学习主流程）
@@ -235,7 +235,7 @@ fun LearnScreen(
         OutlinedTextField(
             value = input,
             onValueChange = { input = it },
-            label = { Text("打字输入（家人可帮忙）") },
+            label = { Text("打字输入，家人可帮忙") },
             singleLine = true,
             enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // review-09 P1-12：结束后禁输入
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

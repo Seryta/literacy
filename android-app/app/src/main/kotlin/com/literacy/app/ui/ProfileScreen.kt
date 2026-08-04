@@ -41,7 +41,7 @@ fun ProfileScreen(
     ) {
         Spacer(Modifier.height(8.dp))
         Text("建档", style = MaterialTheme.typography.headlineLarge)
-        Text("先学会认写自己的名字（姓名是第一个字包）",
+        Text("先学会认写自己的名字",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
@@ -54,7 +54,7 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; error = null },
-                    label = { Text("学习者姓名（如：张建国）") },
+                    label = { Text("学习者姓名") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small,
@@ -62,7 +62,7 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("称呼方式（可选，如：张阿姨）") },
+                    label = { Text("称呼方式") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -79,7 +79,7 @@ fun ProfileScreen(
                         val chars = name.trim()
                         when {
                             chars.isEmpty() -> error = "请输入姓名"
-                            chars.length > 4 -> error = "姓名过长（最多 4 字）"
+                            chars.length > 4 -> error = "姓名过长，最多 4 字"
                             else -> {
                                 // review-10 P2-16：字库可用性检查移入 IO（首次触发 18MB 哈希/复制，不能在主线程）
                                 scope.launch {
@@ -87,7 +87,7 @@ fun ProfileScreen(
                                         chars.map { it.toString() }.filter { hanzi.find(it) == null }
                                     }
                                     if (missing.isNotEmpty()) {
-                                        error = "字库未收录：${missing.joinToString("、")}（换个写法或补充字库）"
+                                        error = "字库未收录：${missing.joinToString("、")}，换个写法或补充字库"
                                     } else {
                                     // 拆字 → name_plan + characters（source=name_plan），Room 写入在 IO 线程
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

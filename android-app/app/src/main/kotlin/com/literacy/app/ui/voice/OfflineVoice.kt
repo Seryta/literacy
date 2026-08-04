@@ -9,15 +9,15 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OfflineModelConfig
-import com.k2fsa.sherpa.onnx.OfflineRecognizer
-import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OfflineStream
+import com.k2fsa.sherpa.onnx.OnlineModelConfig
+import com.k2fsa.sherpa.onnx.OnlineRecognizer
+import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OnlineStream
+import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import java.io.File
 
 /**
@@ -106,7 +106,7 @@ class OfflineVoiceEngine(
     }
 
     // ── STT（流式 zipformer 中文识别）─────────────────────────────
-    private var recognizer: OfflineRecognizer? = null
+    private var recognizer: OnlineRecognizer? = null
     private var record: AudioRecord? = null
     private var listening = false
     private var cancelled = false
@@ -121,19 +121,28 @@ class OfflineVoiceEngine(
             val encoder = File(dir, "encoder-epoch-99-avg-1.onnx").absolutePath
             val decoder = File(dir, "decoder-epoch-99-avg-1.onnx").absolutePath
             val joiner = File(dir, "joiner-epoch-99-avg-1.onnx").absolutePath
-            val transducer = OfflineTransducerModelConfig(
+            val tokensFile = File(dir, "tokens.txt").absolutePath
+            val transducer = OnlineTransducerModelConfig(
                 encoder = encoder,
                 decoder = decoder,
                 joiner = joiner,
             )
-            val modelConfig = OfflineModelConfig(transducer = transducer)
-            recognizer = OfflineRecognizer(
-                config = OfflineRecognizerConfig(
-                    featConfig = FeatureConfig(),
+            // 关键：tokens.txt 必须传给 OnlineModelConfig.tokens（vocab）——
+            // 缺失会导致 createStream 在 native 层崩溃（确定性 bug）
+            val modelConfig = OnlineModelConfig(
+                transducer = transducer,
+                tokens = tokensFile,
+                numThreads = 2,
+            )
+            // OnlineRecognizer：标准流式（isReady 控制 decode 节奏，特征维度 80）
+            recognizer = OnlineRecognizer(
+                config = OnlineRecognizerConfig(
+                    featConfig = FeatureConfig(featureDim = 80),
                     modelConfig = modelConfig,
+                    enableEndpoint = true,
                 ),
             )
-            Log.i(tag, "离线 STT 就绪（流式中文）")
+            Log.i(tag, "离线 STT 就绪（流式中文，OnlineRecognizer）")
         } catch (e: Exception) {
             Log.w(tag, "离线 STT 初始化失败，回退系统", e)
             recognizer = null
@@ -172,15 +181,18 @@ class OfflineVoiceEngine(
                 minBuf.coerceAtLeast(sampleRate),
             )
         } catch (e: Exception) {
+            Log.w(tag, "离线 STT AudioRecord 构造失败（无麦克风？）", e)
             listening = false
             return false
         }
         // 无音频输入设备（模拟器/特殊环境）：优雅降级，不启动监听（避免 native 崩溃）
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            Log.w(tag, "离线 STT AudioRecord 未初始化（无输入设备）state=${recorder.state}")
             recorder.release()
             listening = false
             return false
         }
+        Log.d(tag, "AudioRecord 就绪，开始 createStream + 采集循环（虚拟音频验证）")
         record = recorder
 
         val thread = Thread {
@@ -189,12 +201,17 @@ class OfflineVoiceEngine(
                 // 启动失败（无输入流）：降级，不进入采集循环（避免 native decode 崩溃）
                 if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) return@Thread
                 while (listening && !cancelled) {
-                    val stream: OfflineStream = engine.createStream()
+                    val stream: OnlineStream = engine.createStream()
+                    Log.d(tag, "createStream 成功，开始采集")
                     var fullText = ""
                     var silentMs = 0L
                     var lastPartial = ""
                     val shortBuf = ShortArray(minBuf / 2)
-                    // 一句话的识别循环：采集 → 解码 → 静音检测结束
+                    // 累积音频到流式 chunk 再解码（zipformer 需约 39 特征帧≈390ms；
+                    // 每 read 小段就 decode 会报输入帧数不足）
+                    val chunkSamples = 8000   // 0.5s @16kHz
+                    val accum = java.util.ArrayList<Short>(chunkSamples)
+                    // 一句话的识别循环：采集 → 累积 → 解码 → 静音检测结束
                     while (listening && !cancelled) {
                         val n = recorder.read(shortBuf, 0, shortBuf.size)
                         if (n <= 0) continue
@@ -208,20 +225,24 @@ class OfflineVoiceEngine(
                         } else {
                             silentMs = 0L
                         }
-                        // 解码
-                        val floatBuf = FloatArray(n)
-                        for (i in 0 until n) floatBuf[i] = shortBuf[i] / 32767f
-                        stream.acceptWaveform(floatBuf, sampleRate)
-                        engine.decode(stream)
-                        val text = engine.getResult(stream).text
-                        if (text.isNotBlank()) {
-                            silentMs = 0L   // 有识别文本视为正在说话（停顿不截断）
-                            if (text != lastPartial) {
-                                lastPartial = text
-                                fullText = text
-                                val t = text
-                                Log.d(tag, "实时转写: $t")
-                                mainHandler.post { onPartial(t) }   // 实时字幕
+                        // 累积到 chunk（约 0.5s），标准流式：acceptWaveform 后 isReady 则 decode
+                        for (i in 0 until n) accum.add(shortBuf[i])
+                        if (accum.size >= chunkSamples) {
+                            val floatBuf = FloatArray(accum.size)
+                            for (i in accum.indices) floatBuf[i] = accum[i] / 32767f
+                            stream.acceptWaveform(floatBuf, sampleRate)
+                            accum.clear()
+                            while (engine.isReady(stream)) engine.decode(stream)
+                            val text = engine.getResult(stream).text
+                            if (text.isNotBlank()) {
+                                silentMs = 0L   // 有识别文本视为正在说话（停顿不截断）
+                                if (text != lastPartial) {
+                                    lastPartial = text
+                                    fullText = text
+                                    val t = text
+                                    Log.d(tag, "实时转写: $t")
+                                    mainHandler.post { onPartial(t) }   // 实时字幕
+                                }
                             }
                         }
                     }

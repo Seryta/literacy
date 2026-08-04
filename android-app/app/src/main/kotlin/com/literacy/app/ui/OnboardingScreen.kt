@@ -234,6 +234,17 @@ fun OnboardingScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 姓名可跳过（ASK_NAME 步）："先不录名字" → 直接完成引导（首页建档卡引导）
+            if (ui.step == OnboardingViewModel.Step.ASK_NAME) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { viewModel.onOptionClick("先不录名字") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = MaterialTheme.shapes.large,
+                ) { Text("先不录名字（以后可说 建档）", fontSize = 15.sp) }
+            }
         }
 
         // ── 语音状态：引导阶段自动持续听，无需任何点击 ──
@@ -253,8 +264,8 @@ fun OnboardingScreen(
         }
         Spacer(Modifier.height(8.dp))
 
-        // ── 语音包下载（VOICE_DOWNLOAD）：模型未就绪时引导下载 ──
-        if (ui.step == OnboardingViewModel.Step.VOICE_DOWNLOAD) {
+        // ── 语音包准备（VOICE_PREP）：不可跳过（语音老师是使用前提）──
+        if (ui.step == OnboardingViewModel.Step.VOICE_PREP && !ui.voiceModelsReady) {
             Spacer(Modifier.height(16.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -262,7 +273,7 @@ fun OnboardingScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             ) {
                 Column(Modifier.padding(LiteracyDimens.CardPadding)) {
-                    Text("语音老师准备就绪", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text("语音老师准备", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "下载语音包后，女声朗读和语音识别完全离线、更清楚。\n约 210MB，建议连 Wi-Fi 下载。",
@@ -277,6 +288,31 @@ fun OnboardingScreen(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text("下载中… ${ui.voiceDownloadProgress}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    } else if (ui.voiceFailCount > 0) {
+                        // 下载失败：重试为主；失败 2 次后才出现弱化"暂时用系统语音"出口
+                        Text(
+                            "下载失败，请检查网络和 Wi-Fi 后再试。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { viewModel.startVoiceDownload() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = MaterialTheme.shapes.large,
+                        ) { Text("重试下载", fontSize = 18.sp) }
+                        if (ui.voiceFailCount >= 2) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.useSystemVoice() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = MaterialTheme.shapes.large,
+                            ) { Text("暂时用系统语音（下载完自动切换）", fontSize = 14.sp) }
+                        }
                     } else {
                         Button(
                             onClick = { viewModel.startVoiceDownload() },
@@ -285,14 +321,6 @@ fun OnboardingScreen(
                                 .height(56.dp),
                             shape = MaterialTheme.shapes.large,
                         ) { Text("下载语音包（女声朗读 + 离线识别）", fontSize = 17.sp) }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.skipVoiceDownload() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = MaterialTheme.shapes.large,
-                        ) { Text("先跳过（以后可下载）", fontSize = 16.sp) }
                     }
                 }
             }

@@ -26,7 +26,7 @@ class OnboardingViewModel(
     private val store: com.literacy.agent.store.LearningStore,
 ) : ViewModel() {
 
-    enum class Step { WELCOME, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, VOICE_DOWNLOAD, DONE }
+    enum class Step { WELCOME, VOICE_PREP, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, DONE }
 
     data class ObState(
         val step: Step = Step.WELCOME,
@@ -40,7 +40,8 @@ class OnboardingViewModel(
         val voiceDownloading: Boolean = false,      // 语音包下载中
         val voiceDownloadProgress: Int = 0,         // 0..100
         val voiceDownloadDone: Boolean = false,     // 本次引导内是否已下载完成
-        val voiceModelsReady: Boolean = false,      // 模型是否已就绪（跳过下载步）
+        val voiceFailCount: Int = 0,                // 语音包下载失败次数（>=2 出现弱化系统语音出口）
+        val voiceModelsReady: Boolean = false,      // 模型是否已就绪
     )
 
     var ui by mutableStateOf(ObState())
@@ -63,20 +64,34 @@ class OnboardingViewModel(
     var onComplete: ((fullName: String, startNow: Boolean) -> Unit)? = null
 
     init {
-        // 初始欢迎语（进入 PICK_MASCOT 由用户点击"开始"触发）
+        // 初始欢迎语（语音老师是使用前提，先准备再选宠物/姓名）
         ui = ui.copy(
             step = Step.WELCOME,
-            robotText = "嗨！我是${Mascots.candidates[0].variant.label}，以后我陪你一起认字！我们先来选一个你喜欢的小伙伴吧。",
+            robotText = "嗨！我是${Mascots.candidates[0].variant.label}，以后我陪你一起认字！先帮你把语音老师准备好，然后选一个小伙伴。",
             showOptions = listOf("开始"),
         )
     }
 
     // ── 步骤推进 ────────────────────────────────────────────────────
+    /** 语音包准备（不可跳过）：就绪直接过，未就绪下载（失败重试，2 次后弱化系统语音出口）。 */
+    private fun goVoicePrep() {
+        clearPartial()
+        val ready = VoiceHub.modelManager.ttsReady() && VoiceHub.modelManager.sttReady()
+        ui = ui.copy(
+            step = Step.VOICE_PREP,
+            robotText = if (ready) "语音老师已经准备好了！接下来选一个你喜欢的小伙伴吧。" else "先把语音老师准备好：下载语音包后，女声朗读和语音识别完全离线、更清楚。约 210MB，建议连 Wi-Fi。",
+            showOptions = emptyList(),
+            showInput = false,
+            voiceModelsReady = ready,
+        )
+        if (ready) goPickMascot()
+    }
+
     private fun goPickMascot() {
         clearPartial()
         ui = ui.copy(
             step = Step.PICK_MASCOT,
-            robotText = "你喜欢哪一个？说“第几个”，比如“第一个”；也可以直接点一下下面的卡片。",
+            robotText = "你喜欢哪一个？说“第几个”，比如“第一个”；也可以直接点卡片。不喜欢挑的话，说“随便”就用小绿。",
             showOptions = emptyList(),
             showInput = false,
         )
@@ -116,6 +131,11 @@ class OnboardingViewModel(
 
     private fun goGuideStart() {
         clearPartial()
+        if (ui.pendingName.isEmpty()) {
+            // 未录姓名：跳过引导学习，直接完成（首页建档卡引导）
+            finishDirect()
+            return
+        }
         ui = ui.copy(
             step = Step.GUIDE_START,
             robotText = "都记住啦！以后我叫你「${ui.pendingName}」好不好？现在我们开始学你的名字，好吗？说“开始”，或者点下面的按钮。",
@@ -128,23 +148,46 @@ class OnboardingViewModel(
     fun handleVoice(text: String) {
         clearPartial()   // 回合结束收起实时字幕
         when (ui.step) {
-            Step.WELCOME, Step.PICK_MASCOT -> {
-                // WELCOME 步说"开始"推进；PICK_MASCOT 说"第几个"选宠物
-                if (ui.step == Step.WELCOME && isYes(text)) {
-                    goPickMascot()
-                } else {
-                    val idx = pickMascotIndex(text)
-                    if (idx != null) onSelectMascot(idx)
-                    else ui = ui.copy(robotText = if (ui.step == Step.WELCOME) "点下面的“开始”按钮，或者直接说“开始”。" else "没听清你说的是第几个，再说一次，比如“第一个”。")
+            Step.WELCOME -> {
+                if (isYes(text)) goVoicePrep()
+                else ui = ui.copy(robotText = "点下面的“开始”按钮，或者直接说“开始”。")
+            }
+            Step.VOICE_PREP -> {
+                // 语音包准备：不可跳过（下载/重试；失败 2 次后才允许"用系统"弱化出口）
+                if (!ui.voiceDownloading) {
+                    when {
+                        text.contains("下载") || text.contains("好") || text.contains("要") || text.contains("重试") -> startVoiceDownload()
+                        text.contains("系统") && ui.voiceFailCount >= 2 -> useSystemVoice()
+                        text.contains("跳过") || text.contains("以后") || text.contains("不") ->
+                            ui = ui.copy(robotText = "语音老师很重要，先下载好再开始（建议连 Wi-Fi）。")
+                        else -> ui = ui.copy(robotText = "说“下载”就开始下载语音包。")
+                    }
+                }
+            }
+            Step.PICK_MASCOT -> {
+                // 可跳过：说"随便/跳过/默认"用小绿
+                val idx = pickMascotIndex(text)
+                when {
+                    idx != null -> onSelectMascot(idx)
+                    text.contains("随便") || text.contains("跳过") || text.contains("默认") || text.contains("都可以") -> {
+                        ui = ui.copy(mascotIndex = 0)
+                        goAskName("好！那就用${Mascots.candidates[0].variant.label}。那……你叫什么名字呀？说给我听，或者点下面的框打出来。（说“跳过”也可以先不录）")
+                    }
+                    else -> ui = ui.copy(robotText = "没听清你说的是第几个，再说一次，比如“第一个”。不想挑就说“随便”。")
                 }
             }
             Step.ASK_NAME -> {
+                // 可跳过：说"跳过/以后/先不录" → 直接完成（首页建档卡引导）
+                if (text.contains("跳过") || text.contains("以后") || text.contains("先不") || text.contains("不录") || text.contains("不用")) {
+                    goGuideStart()   // pendingName 空 → finishDirect
+                    return
+                }
                 val name = extractName(text)
                 if (name.isNotEmpty()) {   // 单字名也接受（真名单字名用户不被拒）
                     ui = ui.copy(pendingName = name)
                     goConfirmName()
                 } else {
-                    ui = ui.copy(robotText = "没听清你的名字，能再说一次吗？或者点下面的框打出来。")
+                    ui = ui.copy(robotText = "没听清你的名字，能再说一次吗？或者点下面的框打出来。（说“跳过”也可以先不录）")
                 }
             }
             Step.CONFIRM_NAME -> {
@@ -168,16 +211,7 @@ class OnboardingViewModel(
                     else -> ui = ui.copy(robotText = "说“开始”我们就开始学你的名字；或者点“等一会”。")
                 }
             }
-            Step.VOICE_DOWNLOAD -> {
-                // 下载步：说"下载"开始下载，说"跳过/以后"跳过（下载中不响应语音）
-                if (!ui.voiceDownloading) {
-                    when {
-                        text.contains("下载") || text.contains("好") || text.contains("要") -> startVoiceDownload()
-                        text.contains("跳过") || text.contains("以后") || text.contains("不") || text.contains("等会") -> skipVoiceDownload()
-                        else -> ui = ui.copy(robotText = "说“下载”就开始，或者点“先跳过”。")
-                    }
-                }
-            }
+            Step.VOICE_PREP -> { /* 已在上方分支处理 */ }
             Step.DONE -> {}
         }
     }
@@ -190,9 +224,16 @@ class OnboardingViewModel(
 
     fun onOptionClick(label: String) {
         when (ui.step) {
-            Step.WELCOME -> if (label == "开始") goPickMascot()
+            Step.WELCOME -> if (label == "开始") goVoicePrep()
             Step.CONFIRM_NAME -> onConfirmName(label == "对")
             Step.GUIDE_START -> finish(startNow = label == "开始学习")
+            Step.VOICE_PREP -> when (label) {
+                "下载语音包" -> startVoiceDownload()
+                "重试" -> startVoiceDownload()
+                "暂时用系统语音" -> useSystemVoice()
+                else -> {}
+            }
+            Step.ASK_NAME -> if (label == "先不录名字") goGuideStart()   // 跳过姓名 → finishDirect
             else -> {}
         }
     }
@@ -219,10 +260,10 @@ class OnboardingViewModel(
         }
     }
 
-    /** 建档落库 + 完成（startNow：立即进学习页 / 回首页）。 */
+    /** 建档落库 + 完成（startNow：立即进学习页 / 回首页）。仅当已录姓名。 */
     private fun finish(startNow: Boolean) {
         val name = ui.pendingName
-        if (name.isEmpty()) return
+        if (name.isEmpty()) { finishDirect(); return }
         val selected = Mascots.candidates[ui.mascotIndex]
         ui = ui.copy(step = Step.DONE, robotText = "好！那我们开始吧！")
         // Room 写入必须在 IO 线程；完成后回调 UI 导航
@@ -241,21 +282,24 @@ class OnboardingViewModel(
                     store.upsertCharacter(rec.copy(source = "name_plan"))
                 }
             }
-            // 建档完成后：语音模型未就绪 → 引导下载语音包；就绪 → 直接进学习
-            val ready = VoiceHub.modelManager.ttsReady() && VoiceHub.modelManager.sttReady()
-            if (ready) {
-                onComplete?.invoke(name, startNow)
-            } else {
-                ui = ui.copy(step = Step.VOICE_DOWNLOAD, voiceModelsReady = ready)
-                pendingStartNow = startNow
-            }
+            onComplete?.invoke(name, startNow)
         }
     }
 
-    /** 引导下载步：记录完成后是否立即开始学习。 */
-    private var pendingStartNow = true
+    /** 未录姓名/跳过引导：完成引导但不建档（首页建档卡引导，随时可补）。 */
+    private fun finishDirect() {
+        val selected = Mascots.candidates[ui.mascotIndex]
+        ui = ui.copy(step = Step.DONE, robotText = "好！那我们先逛一逛，想录名字的时候随时说“建档”。")
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                settings.mascotId = selected.variant.id
+                settings.onboardingDone = true
+            }
+            onComplete?.invoke("", false)
+        }
+    }
 
-    /** 开始下载语音包（TTS 女声 + STT 识别，~210MB，建议 Wi-Fi）。 */
+    /** 开始下载语音包（TTS 女声 + STT 识别，~210MB，建议 Wi-Fi）。不可跳过，失败可重试。 */
     fun startVoiceDownload() {
         if (ui.voiceDownloading) return
         ui = ui.copy(voiceDownloading = true, voiceDownloadProgress = 0)
@@ -272,23 +316,24 @@ class OnboardingViewModel(
                 // 加载离线引擎
                 VoiceHub.offline.initTts()
                 VoiceHub.offline.initStt()
-                ui = ui.copy(voiceDownloading = false, voiceDownloadProgress = 100, voiceDownloadDone = true)
-                goAfterVoice()
+                ui = ui.copy(voiceDownloading = false, voiceDownloadProgress = 100, voiceDownloadDone = true, voiceModelsReady = true)
+                goPickMascot()
             } catch (e: Exception) {
-                ui = ui.copy(voiceDownloading = false)
-                // 下载失败：可重试或跳过（系统兜底）
+                // 下载失败：计数，提供重试；2 次后出现弱化"暂时用系统语音"出口
+                val failCount = ui.voiceFailCount + 1
+                ui = ui.copy(
+                    voiceDownloading = false,
+                    voiceFailCount = failCount,
+                    robotText = if (failCount >= 2) "下载失败。检查一下网络和 Wi-Fi，再试一次。" else "下载失败了，检查一下网络，然后重试。",
+                )
             }
         }
     }
 
-    /** 跳过语音包下载（系统自带语音兜底，首页可再下载）。 */
-    fun skipVoiceDownload() {
+    /** 失败 2 次后的弱化出口：暂时用系统语音（下载完成自动切回离线；首页语音包卡常驻提醒）。 */
+    fun useSystemVoice() {
         if (ui.voiceDownloading) return
-        goAfterVoice()
-    }
-
-    private fun goAfterVoice() {
-        onComplete?.invoke(ui.pendingName, pendingStartNow)
+        goPickMascot()
     }
 
     // ── 语音解析（本地规则，不依赖 LLM） ────────────────────────────

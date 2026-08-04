@@ -38,12 +38,12 @@ class OfflineVoiceEngine(
         val dir = modelManager.ttsDir
         if (!modelManager.ttsReady()) return
         try {
-            val modelFile = modelManager.findFile(dir, "model.onnx") ?: return
-            val tokensFile = modelManager.findFile(dir, "tokens.txt") ?: return
+            val modelFile = File(dir, "model.onnx")
+            val tokensFile = File(dir, "tokens.txt")
             val vits = OfflineTtsVitsModelConfig(
                 model = modelFile.absolutePath,
                 tokens = tokensFile.absolutePath,
-                lexicon = modelManager.findFile(dir, "lexicon.txt")?.absolutePath ?: "",
+                lexicon = File(dir, "lexicon.txt").takeIf { it.isFile }?.absolutePath ?: "",
             )
             val modelConfig = OfflineTtsModelConfig(
                 vits = vits,
@@ -117,9 +117,9 @@ class OfflineVoiceEngine(
         val dir = modelManager.sttDir
         if (!modelManager.sttReady()) return
         try {
-            val encoder = modelManager.findFile(dir, "encoder-epoch-99-avg-1.onnx")?.absolutePath ?: return
-            val decoder = modelManager.findFile(dir, "decoder-epoch-99-avg-1.onnx")?.absolutePath ?: return
-            val joiner = modelManager.findFile(dir, "joiner-epoch-99-avg-1.onnx")?.absolutePath ?: return
+            val encoder = File(dir, "encoder-epoch-99-avg-1.onnx").absolutePath
+            val decoder = File(dir, "decoder-epoch-99-avg-1.onnx").absolutePath
+            val joiner = File(dir, "joiner-epoch-99-avg-1.onnx").absolutePath
             val transducer = OfflineTransducerModelConfig(
                 encoder = encoder,
                 decoder = decoder,

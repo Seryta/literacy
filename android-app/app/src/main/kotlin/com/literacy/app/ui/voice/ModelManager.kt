@@ -58,12 +58,15 @@ class ModelManager(context: Context) {
     val ttsDir = File(appContext.filesDir, "voice-models/tts")
     val sttDir = File(appContext.filesDir, "voice-models/stt")
 
-    // ── 就绪检测 ────────────────────────────────────────────────────
-    fun ttsReady(): Boolean = ready(ttsDir, VoiceModels.TTS.paths)
-    fun sttReady(): Boolean = ready(sttDir, VoiceModels.STT.paths)
+    // ── 就绪检测（SHA256 校验：旧版本/损坏文件不算就绪，强制重新下载）──
+    fun ttsReady(): Boolean = verify(ttsDir, VoiceModels.TTS)
+    fun sttReady(): Boolean = verify(sttDir, VoiceModels.STT)
 
-    private fun ready(dir: File, files: List<String>): Boolean =
-        files.all { File(dir, it.substringAfterLast('/')).isFile && File(dir, it.substringAfterLast('/')).length() > 0 }
+    private fun verify(dir: File, spec: VoiceModels.ModelSpec): Boolean =
+        spec.files.all { (path, sha) ->
+            val f = File(dir, path.substringAfterLast('/'))
+            f.isFile && f.length() > 0 && sha256(f).equals(sha, ignoreCase = true)
+        }
 
     /** 定位模型文件（下载后文件名即原始名；兼容子目录递归）。 */
     fun findFile(dir: File, name: String): File? {
@@ -85,7 +88,7 @@ class ModelManager(context: Context) {
     private suspend fun downloadModel(spec: VoiceModels.ModelSpec, targetDir: File, onProgress: (Int) -> Unit): Boolean =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             targetDir.mkdirs()
-            if (ready(targetDir, spec.paths)) return@withContext true
+            if (verify(targetDir, spec)) return@withContext true
             spec.files.forEachIndexed { i, (path, sha256) ->
                 val dest = File(targetDir, path.substringAfterLast('/'))
                 if (!(dest.isFile && dest.length() > 0)) {
@@ -93,7 +96,7 @@ class ModelManager(context: Context) {
                 }
                 onProgress(((i + 1) * 100 / spec.files.size).coerceAtMost(100))
             }
-            ready(targetDir, spec.paths)
+            verify(targetDir, spec)
         }
 
     /** 下载 + SHA256 校验（防投毒：与官方哈希不一致即删文件抛异常）。 */

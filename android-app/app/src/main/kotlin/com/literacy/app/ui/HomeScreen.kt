@@ -280,7 +280,7 @@ fun HomeScreen(
         // 底部安全区：悬浮吉祥物 + 系统导航条留位
         Spacer(Modifier.height(96.dp))
 
-        // ── 语音包状态卡（正式）：模型未就绪时引导下载（女声+离线识别）──
+        // ── 语音包状态卡：模型未就绪时引导下载；已就绪时显示状态（用户知情/诊断）──
         val modelManager = com.literacy.app.ui.voice.VoiceHub.modelManager
         if (!modelManager.ttsReady() || !modelManager.sttReady()) {
             var dlProgress by remember { mutableStateOf(-1) }
@@ -338,6 +338,16 @@ fun HomeScreen(
                     }
                 }
             }
+        } else {
+            // 模型已就绪：显示语音引擎状态（离线女声 + 识别是否可用）
+            val ttsOk = com.literacy.app.ui.voice.VoiceHub.offlineTtsReady
+            val sttOk = com.literacy.app.ui.voice.VoiceHub.offlineSttReady
+            Text(
+                "语音老师：女声朗读${if (ttsOk) "✓" else "（加载中…）"} · 语音识别${if (sttOk) "✓" else "（加载中…）"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            )
         }
     }
 }

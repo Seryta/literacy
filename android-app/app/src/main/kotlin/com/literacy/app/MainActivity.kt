@@ -95,10 +95,15 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     val flowTts = remember { LocalTts(context) }
     DisposableEffect(Unit) { onDispose { flowTts.shutdown() } }
     val voiceFlow = remember {
-        com.literacy.app.ui.voice.VoiceFlowCoordinator(flowScope) { text -> flowTts.speak(text) }
+        com.literacy.app.ui.voice.VoiceFlowCoordinator(flowScope) { text ->
+            flowTts.speak(text)
+            // 主动沟通同时界面可见（TTS 无声时文字兜底，且便于诊断协调器是否触发）
+            scope.launch { snackbarHostState.showSnackbar(text, duration = androidx.compose.material3.SnackbarDuration.Short) }
+        }
     }
     DisposableEffect(Unit) { onDispose { voiceFlow.stop() } }
 
+    // 语音引擎状态可见（诊断 + 用户知情）：首页语音包卡用；此处仅日志
     fun markInteraction() = voiceFlow.onUserInteraction()
 
     // 自动监听启动器（引导/学习页共用）：连续监听 + 实时字幕 + 硬错误降级

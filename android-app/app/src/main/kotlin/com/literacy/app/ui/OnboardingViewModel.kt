@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 /**
  * 首次引导（onboarding）状态机：活泼机器人引导新用户完成建档。
  *
- * 流程：欢迎 → 选宠物（说"第几个"或点击）→ 问姓名（语音/输入）→
+ * 流程：语音包准备（第一屏，不可跳过）→ 选宠物（说"第几个"或点击）→ 问姓名（语音/输入）→
  *       确认姓名（3 次未确认 → 输入兜底）→ 引导开始学习（说"开始"或点击）
  *
  * 全程本地驱动（不依赖 LLM/API key——onboarding 时 key 可能还没配），
@@ -26,10 +26,10 @@ class OnboardingViewModel(
     private val store: com.literacy.agent.store.LearningStore,
 ) : ViewModel() {
 
-    enum class Step { WELCOME, VOICE_PREP, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, DONE }
+    enum class Step { VOICE_PREP, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, DONE }
 
     data class ObState(
-        val step: Step = Step.WELCOME,
+        val step: Step = Step.VOICE_PREP,
         val mascotIndex: Int = 0,
         val pendingName: String = "",
         val confirmAttempts: Int = 0,
@@ -65,27 +65,29 @@ class OnboardingViewModel(
     var onComplete: ((fullName: String, startNow: Boolean) -> Unit)? = null
 
     init {
-        // 初始欢迎语（语音老师是使用前提，先准备再选宠物/姓名）
-        ui = ui.copy(
-            step = Step.WELCOME,
-            robotText = "嗨！我是${Mascots.candidates[0].variant.label}，以后我陪你一起认字！先帮你把语音老师准备好，然后选一个小伙伴。",
-            showOptions = listOf("开始"),
-        )
+        // 第一屏直接是语音包准备（无"开始"门槛）：欢迎语并入下载引导气泡；
+        // 语音已就绪（老用户重进引导）则直接进选宠物。
+        goVoicePrep()
     }
 
     // ── 步骤推进 ────────────────────────────────────────────────────
-    /** 语音包准备（不可跳过）：就绪直接过，未就绪下载（失败重试，2 次后弱化系统语音出口）。 */
+    /** 语音包准备（第一屏，不可跳过）：就绪直接过，未就绪下载（失败重试，2 次后弱化系统语音出口）。 */
     private fun goVoicePrep() {
         clearPartial()
         val ready = VoiceHub.modelManager.ttsReady() && VoiceHub.modelManager.sttReady()
+        if (ready) {
+            // 语音已就绪（老用户重进引导）：无需停留，直接进选宠物（此前 ready 分支的提示语会被 goPickMascot 立即覆盖，属死代码）
+            goPickMascot()
+            return
+        }
+        val greeting = "嗨！我是${Mascots.candidates[0].variant.label}，以后我陪你一起认字！"
         ui = ui.copy(
             step = Step.VOICE_PREP,
-            robotText = if (ready) "语音老师已经准备好了！接下来选一个你喜欢的小伙伴吧。" else "先把语音老师准备好：下载语音包后，女声朗读和语音识别完全离线、更清楚。约 210MB，建议连 Wi-Fi。",
+            robotText = "$greeting 先帮你把语音老师准备好：下载语音包后，女声朗读和语音识别完全离线、更清楚。约 210MB，建议连 Wi-Fi。",
             showOptions = emptyList(),
             showInput = false,
-            voiceModelsReady = ready,
+            voiceModelsReady = false,
         )
-        if (ready) goPickMascot()
     }
 
     private fun goPickMascot() {
@@ -149,19 +151,16 @@ class OnboardingViewModel(
     fun handleVoice(text: String) {
         clearPartial()   // 回合结束收起实时字幕
         when (ui.step) {
-            Step.WELCOME -> {
-                if (isYes(text)) goVoicePrep()
-                else ui = ui.copy(robotText = "点下面的“开始”按钮，或者直接说“开始”。")
-            }
             Step.VOICE_PREP -> {
                 // 语音包准备：不可跳过（下载/重试；失败 2 次后才允许"用系统"弱化出口）
                 if (!ui.voiceDownloading) {
-                    when {
-                        text.contains("下载") || text.contains("好") || text.contains("要") || text.contains("重试") -> startVoiceDownload()
-                        text.contains("系统") && ui.voiceFailCount >= 2 -> useSystemVoice()
-                        text.contains("跳过") || text.contains("以后") || text.contains("不") ->
+                    when (OnboardingVoiceRules.voicePrepIntent(text, ui.voiceFailCount)) {
+                        VoicePrepIntent.DOWNLOAD -> startVoiceDownload()
+                        VoicePrepIntent.USE_SYSTEM -> useSystemVoice()
+                        VoicePrepIntent.REFUSE ->
                             ui = ui.copy(robotText = "语音老师很重要，先下载好再开始（建议连 Wi-Fi）。")
-                        else -> ui = ui.copy(robotText = "说“下载”就开始下载语音包。")
+                        VoicePrepIntent.NONE ->
+                            ui = ui.copy(robotText = "说“下载”就开始下载语音包。")
                     }
                 }
             }
@@ -212,7 +211,6 @@ class OnboardingViewModel(
                     else -> ui = ui.copy(robotText = "说“开始”我们就开始学你的名字；或者点“等一会”。")
                 }
             }
-            Step.VOICE_PREP -> { /* 已在上方分支处理 */ }
             Step.DONE -> {}
         }
     }
@@ -225,15 +223,9 @@ class OnboardingViewModel(
 
     fun onOptionClick(label: String) {
         when (ui.step) {
-            Step.WELCOME -> if (label == "开始") goVoicePrep()
             Step.CONFIRM_NAME -> onConfirmName(label == "对")
             Step.GUIDE_START -> finish(startNow = label == "开始学习")
-            Step.VOICE_PREP -> when (label) {
-                "下载语音包" -> startVoiceDownload()
-                "重试" -> startVoiceDownload()
-                "暂时用系统语音" -> useSystemVoice()
-                else -> {}
-            }
+            // VOICE_PREP 步无选项按钮：下载/重试/系统语音按钮在 UI 直接调 startVoiceDownload/useSystemVoice，不走此入口
             Step.ASK_NAME -> if (label == "先不录名字") goGuideStart()   // 跳过姓名 → finishDirect
             else -> {}
         }
@@ -348,6 +340,9 @@ class OnboardingViewModel(
     private fun isYes(text: String): Boolean = OnboardingVoiceRules.isYes(text)
 }
 
+/** 语音包准备步（VOICE_PREP）的语音意图。 */
+enum class VoicePrepIntent { DOWNLOAD, USE_SYSTEM, REFUSE, NONE }
+
 /** 引导语音解析规则（纯 Kotlin，可 JVM 单元测试）。 */
 object OnboardingVoiceRules {
     /** "第N个" → 角色下标（0-based）；无匹配 null。 */
@@ -374,6 +369,18 @@ object OnboardingVoiceRules {
     fun isYes(text: String): Boolean {
         if (isNo(text)) return false   // "不对"/"不是" 含"对"/"是"，必须先排除否定
         return text.contains("对") || text.contains("是") || text.contains("嗯") || text.contains("没错") || text.contains("好")
+    }
+
+    /** VOICE_PREP 步意图解析：否定/延后词优先——"好，先不下载"（含"好"）、"我要想想"（含"要"）
+     *  不能误触发下载（210MB 不可取消）；再匹配肯定词（下载/好/要/重试）。 */
+    fun voicePrepIntent(text: String, voiceFailCount: Int): VoicePrepIntent = when {
+        // 否定/延后词优先
+        text.contains("不下载") || text.contains("不要") || text.contains("先不") ||
+            text.contains("想想") || text.contains("考虑") || text.contains("等") ||
+            text.contains("以后") || text.contains("跳过") || text.contains("不") -> VoicePrepIntent.REFUSE
+        text.contains("下载") || text.contains("好") || text.contains("要") || text.contains("重试") -> VoicePrepIntent.DOWNLOAD
+        text.contains("系统") && voiceFailCount >= 2 -> VoicePrepIntent.USE_SYSTEM
+        else -> VoicePrepIntent.NONE
     }
 }
 

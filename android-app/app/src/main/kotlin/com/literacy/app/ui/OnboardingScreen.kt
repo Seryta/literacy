@@ -36,7 +36,6 @@ fun OnboardingScreen(
 ) {
     val ui = viewModel.ui
     val stepOrder = listOf(
-        OnboardingViewModel.Step.WELCOME,
         OnboardingViewModel.Step.PICK_MASCOT,
         OnboardingViewModel.Step.ASK_NAME,
         OnboardingViewModel.Step.CONFIRM_NAME,
@@ -136,7 +135,8 @@ fun OnboardingScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 )
             }
-        } else if (listening) {
+        } else if (listening && ui.step != OnboardingViewModel.Step.VOICE_PREP) {
+            // VOICE_PREP 第一屏专注下载：不显示"我在听…"，避免暗示语音已可用
             Text(
                 "🎤 我在听…",
                 style = MaterialTheme.typography.bodyMedium,
@@ -146,7 +146,7 @@ fun OnboardingScreen(
         Spacer(Modifier.height(4.dp))
 
         // ── 选宠物（PICK_MASCOT）：纵向大卡片列表（从上到下，说"第几个"）──
-        if (ui.step == OnboardingViewModel.Step.PICK_MASCOT) {   // 仅选宠物步显示列表（欢迎步先语音包，不显示）
+        if (ui.step == OnboardingViewModel.Step.PICK_MASCOT) {   // 仅选宠物步显示列表（语音包准备步不显示）
             Spacer(Modifier.height(16.dp))
             Mascots.candidates.forEachIndexed { index, mascot ->
                 val selected = index == ui.mascotIndex
@@ -248,7 +248,8 @@ fun OnboardingScreen(
         }
 
         // ── 语音状态：引导阶段自动持续听，无需任何点击 ──
-        // 语音包准备（VOICE_PREP）步骤不显示（先专注下载，避免误以为语音已就绪）
+        // 语音包未就绪（VOICE_PREP 第一屏）不显示——先专注下载，避免误以为语音已就绪；
+        // 进入后续步骤的前提是语音包就绪或已选系统语音，故此时显示状态条是安全的。
         if (ui.step != OnboardingViewModel.Step.VOICE_PREP) {
             Spacer(Modifier.height(16.dp))
             Surface(

@@ -82,6 +82,42 @@ class VoiceRulesTest {
         assertEquals(VoiceCommandParser.Action.Unknown, VoiceCommandParser.parse("今天天气不错"))
     }
 
+    // ── OnboardingVoiceRules.voicePrepIntent（VOICE_PREP 否定/延后优先）──
+    @Test
+    fun `voicePrepIntent 肯定词触发下载`() {
+        assertEquals(VoicePrepIntent.DOWNLOAD, OnboardingVoiceRules.voicePrepIntent("下载", 0))
+        assertEquals(VoicePrepIntent.DOWNLOAD, OnboardingVoiceRules.voicePrepIntent("好", 0))
+        assertEquals(VoicePrepIntent.DOWNLOAD, OnboardingVoiceRules.voicePrepIntent("要", 0))
+        assertEquals(VoicePrepIntent.DOWNLOAD, OnboardingVoiceRules.voicePrepIntent("重试", 2))
+        assertEquals(VoicePrepIntent.DOWNLOAD, OnboardingVoiceRules.voicePrepIntent("好，那就下载吧", 0))
+    }
+
+    @Test
+    fun `voicePrepIntent 否定与延后词不触发下载`() {
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("先不下载", 0))
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("好，先不下载", 0))   // 含"好"也不能误触发
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("我要想想", 0))       // 含"要"也不能误触发
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("不要", 0))
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("我不想下载", 0))
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("等一会", 0))
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("以后再说", 0))
+        assertEquals(VoicePrepIntent.REFUSE, OnboardingVoiceRules.voicePrepIntent("跳过", 0))
+    }
+
+    @Test
+    fun `voicePrepIntent 系统语音需失败 2 次后`() {
+        assertEquals(VoicePrepIntent.NONE, OnboardingVoiceRules.voicePrepIntent("用系统语音", 0))
+        assertEquals(VoicePrepIntent.NONE, OnboardingVoiceRules.voicePrepIntent("用系统语音", 1))
+        assertEquals(VoicePrepIntent.USE_SYSTEM, OnboardingVoiceRules.voicePrepIntent("用系统语音", 2))
+        assertEquals(VoicePrepIntent.USE_SYSTEM, OnboardingVoiceRules.voicePrepIntent("暂时用系统语音吧", 3))
+    }
+
+    @Test
+    fun `voicePrepIntent 无关文本`() {
+        assertEquals(VoicePrepIntent.NONE, OnboardingVoiceRules.voicePrepIntent("谢谢", 0))
+        assertEquals(VoicePrepIntent.NONE, OnboardingVoiceRules.voicePrepIntent("我叫王小明", 0))
+    }
+
     // ── VoiceCommandParser.learnCommand（学习页操作）──
     @Test
     fun `learnCommand 操作词映射`() {

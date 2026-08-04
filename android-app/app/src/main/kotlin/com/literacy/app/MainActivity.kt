@@ -124,10 +124,10 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     }
     // 当前页的自动监听重启器（悬浮球点击时调用：让用户立即说话）；非自动监听页为空 → 悬浮球走一次性识别
     val autoListenRestart = remember { mutableStateOf<(() -> Unit)?>(null) }
-    // 等待离线语音引擎加载完成（重开 App 时模型加载需 1-5s，避免说话/监听走系统兜底导致无声/无反应）
+    // 等待离线语音引擎加载完成（重开 App 时模型加载需数秒，避免说话/监听走系统兜底导致无声/无反应）
     suspend fun awaitVoiceEngine() {
         var waited = 0
-        while (com.literacy.app.ui.voice.VoiceHub.initInProgress && waited < 16) {
+        while (com.literacy.app.ui.voice.VoiceHub.initInProgress && waited < 60) {
             kotlinx.coroutines.delay(500)
             waited++
         }

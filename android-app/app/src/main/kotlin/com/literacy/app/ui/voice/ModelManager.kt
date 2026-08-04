@@ -58,15 +58,29 @@ class ModelManager(context: Context) {
     val ttsDir = File(appContext.filesDir, "voice-models/tts")
     val sttDir = File(appContext.filesDir, "voice-models/stt")
 
-    // ── 就绪检测（SHA256 校验：旧版本/损坏文件不算就绪，强制重新下载）──
+    // ── 就绪检测（SHA256 校验 + 缓存标记：校验过一次写标记，启动秒过不重算哈希）──
     fun ttsReady(): Boolean = verify(ttsDir, VoiceModels.TTS)
     fun sttReady(): Boolean = verify(sttDir, VoiceModels.STT)
 
-    private fun verify(dir: File, spec: VoiceModels.ModelSpec): Boolean =
-        spec.files.all { (path, sha) ->
+    private fun verify(dir: File, spec: VoiceModels.ModelSpec): Boolean {
+        val marker = File(dir, ".verified")
+        val expected = markerContent(spec)
+        // 缓存命中：标记存在且内容匹配 → 直接就绪（不重算 84MB 哈希）
+        if (marker.isFile && marker.readTextOrNull() == expected) return true
+        val ok = spec.files.all { (path, sha) ->
             val f = File(dir, path.substringAfterLast('/'))
             f.isFile && f.length() > 0 && sha256(f).equals(sha, ignoreCase = true)
         }
+        if (ok) marker.writeText(expected)   // 校验通过写缓存标记
+        return ok
+    }
+
+    private fun markerContent(spec: VoiceModels.ModelSpec): String =
+        spec.files.joinToString("|") { (p, s) -> "$p:$s" }
+
+    private fun File.readTextOrNull(): String? = try {
+        if (length() > 4096) null else readText()
+    } catch (e: Exception) { null }
 
     /** 定位模型文件（下载后文件名即原始名；兼容子目录递归）。 */
     fun findFile(dir: File, name: String): File? {

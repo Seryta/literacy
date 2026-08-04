@@ -44,7 +44,7 @@ class LocalTts(context: Context) {
         doSpeak(text)
     }
 
-    /** 轮询等待离线引擎就绪后补读（最多约 10s；超时或失败走系统）。 */
+    /** 轮询等待离线引擎就绪后补读（最多约 30s；超时或失败走系统）。 */
     private fun retryWhenReady() {
         mainHandler.postDelayed({
             if (VoiceHub.offlineTtsReady) {

@@ -178,7 +178,11 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     listening = false
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    autoListenRestart.value?.invoke()   // 学习页/引导：回前台恢复自动监听
+                    // 回前台延迟恢复自动监听（等旧采集线程完全退出，避免并发崩溃）
+                    kotlinx.coroutines.MainScope().launch {
+                        kotlinx.coroutines.delay(1500)
+                        autoListenRestart.value?.invoke()
+                    }
                 }
                 else -> {}
             }

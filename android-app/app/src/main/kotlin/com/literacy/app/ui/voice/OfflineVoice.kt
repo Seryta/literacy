@@ -112,6 +112,7 @@ class OfflineVoiceEngine(
     private var cancelled = false
     private var autoRestart = false
     private var onResult: ((String) -> Unit)? = null
+    @Volatile private var listenThread: Thread? = null   // 采集线程（start 前 join 旧线程，避免并发操作 recognizer 崩溃）
 
     fun initStt() {
         val dir = modelManager.sttDir
@@ -149,6 +150,12 @@ class OfflineVoiceEngine(
     ): Boolean {
         val engine = recognizer ?: return false
         if (listening) return true
+        // 串行化：等待旧采集线程完全退出（后台 cancel 后立即 restart 的竞态——
+        // 旧线程并发操作 recognizer 会导致 sherpa native createStream 崩溃）
+        listenThread?.let { old ->
+            try { old.join(2000) } catch (e: InterruptedException) {}
+            if (old.isAlive) return false   // 旧线程未退出：降级，不启动（避免崩溃）
+        }
         cancelled = false
         this.onResult = onResultText
         this.autoRestart = autoRestart
@@ -176,7 +183,7 @@ class OfflineVoiceEngine(
         }
         record = recorder
 
-        Thread {
+        val thread = Thread {
             try {
                 recorder.startRecording()
                 // 启动失败（无输入流）：降级，不进入采集循环（避免 native decode 崩溃）
@@ -234,7 +241,9 @@ class OfflineVoiceEngine(
                 try { recorder.stop(); recorder.release() } catch (e: Exception) {}
                 listening = false
             }
-        }.start()
+        }
+        listenThread = thread
+        thread.start()
         return true
     }
 

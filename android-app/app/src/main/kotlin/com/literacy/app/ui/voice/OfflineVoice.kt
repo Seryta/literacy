@@ -168,11 +168,19 @@ class OfflineVoiceEngine(
             listening = false
             return false
         }
+        // 无音频输入设备（模拟器/特殊环境）：优雅降级，不启动监听（避免 native 崩溃）
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            listening = false
+            return false
+        }
         record = recorder
 
         Thread {
             try {
                 recorder.startRecording()
+                // 启动失败（无输入流）：降级，不进入采集循环（避免 native decode 崩溃）
+                if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) return@Thread
                 while (listening && !cancelled) {
                     val stream: OfflineStream = engine.createStream()
                     var fullText = ""

@@ -1,19 +1,23 @@
 package com.literacy.app.ui
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import com.literacy.app.ui.voice.VoiceHub
 import java.util.Locale
 
 /**
  * 轻量 TTS 封装（引导机器人/点读用）。
- * 优先离线中文女声（sherpa-onnx，模型就绪时）；否则回退系统 TTS（语速 0.85 适老）。
- * 修复：系统 TTS 引擎异步初始化未就绪时的首条语音不丢（排队补读）。
+ * 优先级：离线中文女声（sherpa-onnx）→ 系统 TTS 兜底。
+ * 关键：引擎初始化中（重开 App 加载模型需 1-5s）speak 排队补读，
+ * 不立即走系统（系统 TTS 可能无声，导致"重开没声音"）。
  */
 class LocalTts(context: Context) {
     private var tts: TextToSpeech? = null
     private var ready = false
-    private var pending: String? = null   // 引擎未就绪时的待读文本（初始化完成补读）
+    private var pending: String? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -21,26 +25,40 @@ class LocalTts(context: Context) {
                 tts?.language = Locale.CHINESE
                 tts?.setSpeechRate(0.85f)
                 ready = true
-                // 补读初始化期间错过的首条语音（欢迎语）
-                pending?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, null, "onboarding"); pending = null }
+                pending?.let { doSpeak(it); pending = null }
             }
         }
     }
 
     fun speak(text: String) {
         if (text.isBlank()) return
-        // 优先离线女声
         if (VoiceHub.offlineTtsReady) {
-            try {
-                if (VoiceHub.offline.speak(text)) return
-            } catch (e: Exception) {
-                // 回退系统
-            }
+            try { if (VoiceHub.offline.speak(text)) return } catch (e: Exception) {}
         }
-        if (!ready) {
-            pending = text   // 引擎初始化中：排队，初始化完成补读
+        if (VoiceHub.initInProgress) {
+            // 离线引擎加载中：排队，等就绪补读（避免走系统无声）
+            pending = text
+            retryWhenReady()
             return
         }
+        doSpeak(text)
+    }
+
+    /** 轮询等待离线引擎就绪后补读（最多约 10s；超时或失败走系统）。 */
+    private fun retryWhenReady() {
+        mainHandler.postDelayed({
+            if (VoiceHub.offlineTtsReady) {
+                pending?.let { VoiceHub.offline.speak(it); pending = null }
+            } else if (VoiceHub.initInProgress) {
+                retryWhenReady()
+            } else {
+                pending?.let { doSpeak(it); pending = null }
+            }
+        }, 800)
+    }
+
+    private fun doSpeak(text: String) {
+        if (!ready) { pending = text; return }   // 系统 TTS 初始化中，初始化完成补读
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onboarding")
         } catch (e: Exception) {

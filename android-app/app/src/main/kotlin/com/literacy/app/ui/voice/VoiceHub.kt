@@ -6,6 +6,8 @@ import android.content.Context
  * App 级语音引擎管理（单例）：
  * - 离线引擎（sherpa-onnx，女声/流式）优先，模型就绪时自动启用
  * - 模型未下载/加载失败 → 各调用点回退系统自带（SpeechRecognizer / TextToSpeech）
+ * - [initInProgress] 供调用方等待：重开 App 引擎加载需 1-5s，
+ *   说话/监听前应等就绪（避免走系统兜底导致无声/无反应）
  */
 object VoiceHub {
     lateinit var modelManager: ModelManager
@@ -14,15 +16,25 @@ object VoiceHub {
         private set
     private var initialized = false
 
+    /** 引擎初始化中（模型就绪时后台加载 onnx，可能 1-5s）；false 表示已结束（成功或失败）。 */
+    @Volatile
+    var initInProgress = false
+        private set
+
     fun init(context: Context) {
         if (initialized) return
         initialized = true
         modelManager = ModelManager(context)
         offline = OfflineVoiceEngine(modelManager)
         // 模型就绪则初始化离线引擎（后台，不阻塞启动）
+        initInProgress = true
         Thread {
-            if (modelManager.ttsReady()) offline.initTts()
-            if (modelManager.sttReady()) offline.initStt()
+            try {
+                if (modelManager.ttsReady()) offline.initTts()
+                if (modelManager.sttReady()) offline.initStt()
+            } finally {
+                initInProgress = false
+            }
         }.start()
     }
 

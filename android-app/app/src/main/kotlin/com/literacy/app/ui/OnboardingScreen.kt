@@ -258,7 +258,7 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    if (listening) "🎤 我在听，你直接说就行" else "🎤 没听清时，说慢一点再试一次",
+                    "🎤 我在听，你直接说就行",
                     fontSize = 17.sp,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(vertical = 14.dp, horizontal = 12.dp),
@@ -341,10 +341,8 @@ fun OnboardingScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        // 语音包准备步骤不可跳过（含整体跳过引导）——语音老师是使用前提
-        if (ui.step != OnboardingViewModel.Step.VOICE_PREP) {
-            TextButton(onClick = onSkip) { Text("跳过引导", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
+        // 引导不可整体跳过（硬性规定）：只能跳过当前步骤（选宠物/姓名），
+        // 语音包准备与整体引导都不提供跳过入口
         Spacer(Modifier.height(16.dp))
     }
 }

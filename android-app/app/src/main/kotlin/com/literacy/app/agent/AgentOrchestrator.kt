@@ -31,6 +31,9 @@ import com.literacy.agent.data.HanziDataSource
  * 交互循环：用户事件 → 本地裁决（ReplayRunner 状态机）→ LLM 决策（provider）→
  * 工具执行 → UI 状态。复用 agent-core 的确定性裁决 + 真实 LLM。
  */
+/** 本地选择题干扰字候选（从字库校验可用性后取 3 个）。 */
+private val DISTRACTOR_CHARS = listOf("家", "国", "爱", "好", "学", "天", "人", "大", "小", "水", "火", "山", "门", "日", "月")
+
 class AgentOrchestrator(
     private val provider: LlmProvider,
     private val hanzi: HanziDataSource? = null,
@@ -410,11 +413,12 @@ class AgentOrchestrator(
         lastText = runner.lastText
         ttsText = runner.ttsText   // P1-13：SafetyGuard 过滤后的文本（TTS 用）
         micRequested = runner.listenRequested
-        // review-10 P1-5：从最近 show_options 提取当前题目（exercise_id/options 供判题一次性消费）
-        // review-11 P1-1.4：同时提取本地选择题真值（UI 渲染源——不直接信模型参数渲染选项）
+        // review-10 P1-5：从最近 show_options 提取当前题目（exercise_id 供判题一次性消费）
+        // review-11 P1-1.4：选项本地持有（UI 渲染源——不直接信模型参数渲染选项）
+        // 残余修复（验收 P1）：canonical show_options 只传 exercise_id/prompt（AGENT-PROTOCOL），
+        // 选项一律本地生成（当前字 + 字库校验的干扰字）——不依赖模型 options 参数，标准调用也能出题
         runner.recentUiTools.lastOrNull { it.name == "show_options" }?.let { tool ->
             val exId = tool.arguments["exercise_id"]?.toString()
-                ?: tool.arguments["options"]?.toString()?.hashCode()?.toString()
             // review-11 批A：作答后旧题不得复活——已消费的题目 id 跳过（currentExercise 保持 null）；
             // 新题（未消费）出现时旧消费记录作废（题目 id 可复用）
             if (exId != null) {
@@ -422,14 +426,16 @@ class AgentOrchestrator(
                 consumedExerciseIds.clear()
             }
             lastExerciseId = exId
-            lastExerciseType = tool.arguments["options"]?.toString()?.let { "audio_choice" }   // 选项型题型
-            val opts = (tool.arguments["options"] as? List<*>)?.mapNotNull { it?.toString() }
-                ?: (tool.arguments["options"] as? String)?.split(",")?.map { it.trim() }
+            lastExerciseType = "audio_choice"   // show_options 即选择题（选项本地持有）
+            // 本地生成选项：当前字 + 字库中可用的干扰字（不依赖模型 options）
+            val target = runner.state.char ?: ""
+            val distractors = DISTRACTOR_CHARS.filter { it != target && hanzi?.find(it) != null }.take(3)
+            val opts = if (target.isNotEmpty()) listOf(target) + distractors else null
             if (!opts.isNullOrEmpty()) {
                 currentExercise = LocalExercise(
                     options = opts,
                     exerciseId = lastExerciseId ?: opts.hashCode().toString(),
-                    correct = runner.state.char ?: "",
+                    correct = target,
                 )
             }
         }

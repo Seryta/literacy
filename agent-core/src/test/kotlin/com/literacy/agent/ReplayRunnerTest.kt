@@ -223,6 +223,40 @@ class ReplayRunnerTest {
         assertTrue(runner.reviewAnswered)
     }
 
+    // ---- 残余修复（验收 P1）：复习中插单（REQUEST_NEW_CHAR）清空旧字复习证据 ----
+
+    @Test
+    fun `复习中插单清空旧字复习证据并退出复习`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        // ASSESS 判题（旧字证据）
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "assess", exerciseType = "audio_choice",
+            dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+        )))
+        runner.tapped("家", correct = true, exerciseId = "e1")
+        assertTrue(runner.reviewAnswered)
+        // 插单换字（"我想学'药'字"）：应清证据 + 退复习
+        runner.voice(com.literacy.agent.model.VoiceIntent.REQUEST_NEW_CHAR, "我想学药字")
+        assertFalse(runner.reviewAnswered, "换字后旧字证据必须清空")
+        assertEquals(null, runner.reviewAnsweredAttempt)
+        assertEquals(com.literacy.agent.model.Mode.LEARNING, runner.state.mode)
+        assertEquals(null, runner.state.reviewStage)
+        assertEquals("药", runner.state.char)
+        // 新字补记 assess（无本地证据）必须被拒（旧字证据已清，不能放行）
+        runner.configureState(runner.state.copy(
+            mode = com.literacy.agent.model.Mode.REVIEW,
+            reviewStage = com.literacy.agent.model.ReviewStage.REINFORCE,
+        ))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "药",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-xchar"),
+        )))))
+        assertTrue(runner.rejectedCalls.contains("record_result"), "换字后旧字证据不得放行新字补记")
+    }
+
     // ---- 残余修复（验收 P1）：补记 assess 保留本地题型/维度（audio_choice 不误写 WRITE）----
 
     @Test

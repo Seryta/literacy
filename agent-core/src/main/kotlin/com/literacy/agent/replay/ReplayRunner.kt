@@ -177,7 +177,15 @@ class ReplayRunner(
             // review-11 P2-2：解析 text 中的目标字（"我想学'药'字"→药）——有则选该字，无则 nextCharSelector
             val target = extractTargetChar(text)
             val next = target ?: nextCharSelector?.invoke()
+            // 残余修复（验收 P1）：复习证据绑定字——换字（插单）清空旧字证据并退出复习，
+            // 防旧字 reviewAnswered/reviewAnsweredAttempt 放行新字（补记到新字）
+            reviewAnswered = false
+            reviewAnsweredScore = null
+            reviewAnsweredAttempt = null
+            assessRecordedForRound.clear()
             state = state.copy(
+                mode = Mode.LEARNING,
+                reviewStage = null,
                 phase = Phase.INTRODUCE,
                 char = next ?: state.char,
                 learningPath = state.learningPath,
@@ -275,7 +283,11 @@ class ReplayRunner(
         )))
         reviewAnswered = true   // review-09 P1-4：判题证据
         reviewAnsweredScore = if (correct) 1.0 else 0.0   // 残余修复：本地判题真值（补记 assess 用）
-        reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)   // 完整本地上下文（题型+维度+分数）
+        // 残余修复（验收 P1）：ASSESS 快照只在 ASSESS 阶段保存——REINFORCE 阶段的作答
+        // 不得覆盖 ASSESS 快照（否则补记会把强化阶段分数/题型当 ASSESS 落库）
+        if (state.mode == Mode.REVIEW && state.reviewStage == ReviewStage.ASSESS) {
+            reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)
+        }
         val ev = ButtonTapped(action, correct, exerciseId)
         lastEvent = ev
         judgePhase(ev)

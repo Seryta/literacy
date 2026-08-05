@@ -42,7 +42,7 @@ class OfflineVoiceEngine(
     private var audioTrack: AudioTrack? = null
     // 播放代次——新朗读/取消时 +1；在途任务 play 前校验失败则不播放
     // （协程/队列 cancel 不中断同步 native generate，旧任务可能在新任务之后才生成完）
-    @Volatile private var ttsGeneration = 0
+    private val ttsGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
     fun initTts() {
         val dir = modelManager.ttsDir
@@ -78,14 +78,14 @@ class OfflineVoiceEngine(
 
     /** 新朗读代次：调用方（LearnViewModel）在启动朗读前获取；
      *  在途旧任务（同步 generate 不可中断）play 前校验失败则不播放。 */
-    fun nextSpeakGeneration(): Int = ++ttsGeneration
+    fun nextSpeakGeneration(): Int = ttsGeneration.incrementAndGet()
 
     /** 取消在途朗读（离页/释放/用户开口打断）：代次 +1，正在 generate 的旧任务完成后不播放。 */
-    fun cancelSpeak() { ttsGeneration++ }
+    fun cancelSpeak() { ttsGeneration.incrementAndGet() }
 
     /** 当前播放代次（取消/新朗读后 +1）。调用方用「speak 返回 false 时的 currentSpeakGeneration」
      *  区分「被取代/取消」（代次已变，不得重播旧文本/走系统兜底）与「真实失败」（代次未变，可兜底）。 */
-    fun currentSpeakGeneration(): Int = ttsGeneration
+    fun currentSpeakGeneration(): Int = ttsGeneration.get()
 
     /** 朗读文本（女声）；返回是否成功。
      *  @param generation 播放代次（0=不校验，仅无打断语义的旧调用方用）；
@@ -94,18 +94,21 @@ class OfflineVoiceEngine(
      *  调用方必须用 [currentSpeakGeneration] 区分——代次已变时不得走系统兜底重播旧文本。
      *  串行：ttsLock 内 generate+play 原子执行（native OfflineTts 非并发安全）。 */
     fun speak(text: String, generation: Int = 0): Boolean {
-        val engine = tts ?: return false
         if (text.isBlank()) return false
+        // 残余修复（验收 P1）：engine 捕获与 generate+play 整体在 ttsLock 内——
+        // initTts 重建（同样持锁 release+替换）不会并发释放 speak 正在使用的实例
         return synchronized(ttsLock) {
+            val engine = tts ?: return false
             // 已被更新的朗读/取消取代：不生成（省一次 CPU 重操作）
-            if (generation != 0 && generation != ttsGeneration) return false
+            if (generation != 0 && generation != ttsGeneration.get()) return false
             try {
                 stop()
                 val audio = engine.generate(text)
                 // 生成期间被取消/取代：不播放（旧音频不得盖过新音频/离页后不响）
-                if (generation != 0 && generation != ttsGeneration) return false
+                if (generation != 0 && generation != ttsGeneration.get()) return false
+                // 残余修复（验收 P2）：play 前二次校验代次（play 与代次检查间的窗口被取消则不播）
                 val samples = audio.samples
-                if (samples.isEmpty()) return false
+                if (samples.isEmpty() || (generation != 0 && generation != ttsGeneration.get())) return false
                 play(samples, audio.sampleRate)
                 true
             } catch (e: Exception) {
@@ -169,8 +172,8 @@ class OfflineVoiceEngine(
             val wasListening = listening
             val savedOnResult = onResult
             val savedAutoRestart = autoRestart
-            val savedGen = listenGeneration   // 残余修复（验收 P1）：重建期间被 cancel（退后台）则恢复时不再开麦
-            cancelListening()
+            cancelListening()   // 重建前清理（会递增 listenGeneration 作废旧代在途回调）
+            val captureGen = listenGeneration   // 重建基线：其后只有外部 cancel（退后台）会再递增
             listenThread?.let { old ->
                 try { old.join(2000) } catch (e: InterruptedException) {}
                 // 残余修复：旧线程仍存活（可能停在 native decode）→ 不释放正在使用的
@@ -218,7 +221,7 @@ class OfflineVoiceEngine(
             // 不做则监听静默死亡，用户说话无声。
             // 残余修复（验收 P1）：重建期间若被页面 cancel（退后台，listenGeneration 已变），
             // 不再自动开麦（否则恢复会覆盖退后台取消、在后台重新开麦）
-            if (wasListening && recognizer != null && listenGeneration == savedGen) {
+            if (wasListening && recognizer != null && listenGeneration == captureGen) {
                 val ok = startListening(savedOnResult ?: {}, onPartialCb ?: {}, savedAutoRestart)
                 if (!ok) Log.w(tag, "initStt 重建后恢复监听失败（无输入设备？）")
             }

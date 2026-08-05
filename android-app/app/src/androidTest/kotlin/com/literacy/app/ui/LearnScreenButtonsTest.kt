@@ -19,6 +19,7 @@ import com.literacy.agent.provider.ScriptedLlmProvider
 import com.literacy.agent.store.InMemoryStore
 import com.literacy.app.data.AssetHanziDataSource
 import com.literacy.app.settings.AppSettings
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +43,12 @@ class LearnScreenButtonsTest {
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    /** 测试进程不经 MainActivity：初始化 VoiceHub（无模型时引擎不加载，走系统 TTS 兜底）。 */
+    @Before
+    fun initVoiceHub() {
+        com.literacy.app.ui.voice.VoiceHub.init(context)
+    }
 
     /** 首轮 advance_phase（INTRODUCE→RECOGNIZE；RECOGNIZE 需事件判定成功条件，第 2 次会空转被拒），后续空回复。 */
     private val script = listOf(

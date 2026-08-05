@@ -425,16 +425,28 @@ class AgentOrchestrator(
                 if (exId in consumedExerciseIds) return@let
                 consumedExerciseIds.clear()
             }
-            lastExerciseId = exId
-            lastExerciseType = "audio_choice"   // show_options 即选择题（选项本地持有）
             // 本地生成选项：当前字 + 字库中可用的干扰字（不依赖模型 options）
             val target = runner.state.char ?: ""
             val distractors = DISTRACTOR_CHARS.filter { it != target && hanzi?.find(it) != null }.take(3)
             val opts = if (target.isNotEmpty()) listOf(target) + distractors else null
             if (!opts.isNullOrEmpty()) {
+                // 残余修复（验收 P1）：选项乱序（正确答案不恒为首位——恒首位用户盲选即可判对，
+                // 检测与掌握度失真）；correct 字段仍指向 target，判题不受顺序影响
+                val shuffled = opts.shuffled()
+                // 残余修复（验收 P1）：fallback ID 回写——canonical show_options 可不带 exercise_id，
+                // 无 ID 时消费检查不生效，作答后下一回合旧题复活；回写后同题同选项哈希稳定，
+                // consumedExerciseIds 一次性消费生效（换字后选项变→哈希变→不误伤新题）
+                val effectiveId = exId ?: shuffled.hashCode().toString()
+                lastExerciseId = effectiveId
+                // 残余修复（验收 P2）：题型按场景区分——READ_ONLY 学习轮选字填空=fill_blank
+                // （dimensionForPhase 同推 RECOGNIZE，但不破坏既有 fill_blank 语义）；
+                // 复习轮听音选字=audio_choice
+                lastExerciseType = if (runner.state.mode == com.literacy.agent.model.Mode.REVIEW) "audio_choice"
+                    else if (runner.state.learningPath == com.literacy.agent.model.LearningPath.READ_ONLY) "fill_blank"
+                    else "audio_choice"
                 currentExercise = LocalExercise(
-                    options = opts,
-                    exerciseId = lastExerciseId ?: opts.hashCode().toString(),
+                    options = shuffled,
+                    exerciseId = effectiveId,
                     correct = target,
                 )
             }

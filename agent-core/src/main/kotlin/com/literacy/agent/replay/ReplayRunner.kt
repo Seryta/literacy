@@ -281,12 +281,12 @@ class ReplayRunner(
         configureState(state.copy(attempt = (prev ?: com.literacy.agent.model.AttemptContext()).copy(
             score = if (correct) 1.0 else 0.0,
         )))
-        reviewAnswered = true   // review-09 P1-4：判题证据
-        reviewAnsweredScore = if (correct) 1.0 else 0.0   // 残余修复：本地判题真值（补记 assess 用）
-        // 残余修复（验收 P1）：ASSESS 快照只在 ASSESS 阶段保存——REINFORCE 阶段的作答
-        // 不得覆盖 ASSESS 快照（否则补记会把强化阶段分数/题型当 ASSESS 落库）
+        // 残余修复（验收 P1）：ASSESS 证据（reviewAnswered/score/快照）只在 ASSESS 阶段设置——
+        // RECALL/REINFORCE 的历史/越界点击不得打开 ASSESS 推进门禁，也不得污染冻结快照
         if (state.mode == Mode.REVIEW && state.reviewStage == ReviewStage.ASSESS) {
-            reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)
+            reviewAnswered = true   // review-09 P1-4：判题证据
+            reviewAnsweredScore = if (correct) 1.0 else 0.0   // 本地判题真值（补记 assess 用）
+            reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)   // 完整本地上下文
         }
         val ev = ButtonTapped(action, correct, exerciseId)
         lastEvent = ev
@@ -761,7 +761,10 @@ class ReplayRunner(
             return
         }
         if (attempt != null) {
-            if (attempt.phase != null && phase != attempt.phase) {
+            // 残余修复（验收 P1）：延迟补记 assess 豁免 phase 校验——attempt 已被 REINFORCE
+            // 作答覆盖（phase=reinforce），补记的 assess 是判题延迟落库（冻结快照可回填）
+            val backfillAssess = phase == "assess" && attempt.phase != "assess" && reviewAnsweredAttempt != null
+            if (attempt.phase != null && phase != attempt.phase && !backfillAssess) {
                 rejectedCalls += "record_result"
                 rejectReasons += "record_result: phase 与本地事件不符（期望 ${attempt.phase}）"   // review-09 P1-7
                 return
@@ -822,7 +825,10 @@ class ReplayRunner(
         // （原 ?: 0.0 不可达，删除）——本地权威优先，模型分数兜底
         // 残余修复：补记 assess（attempt 被 advanceReview 清空、reviewAnswered 门禁路径）
         // 必须用本地判题真值（reviewAnsweredScore），不得用模型分数覆盖本地判题结果
-        val backfillAttempt = if (phase == "assess" && attempt?.score == null && reviewAnswered) reviewAnsweredAttempt else null
+        // 残余修复（验收 P1）：补记 assess 用冻结快照的条件是「当前 attempt 已不是 assess」
+        // （REINFORCE 已产生新作答）——只看 score 为 null 会漏掉 REINFORCE 作答后的补记，
+        // 把强化阶段分数/题型/维度串进 assess 落库
+        val backfillAttempt = if (phase == "assess" && attempt?.phase != "assess" && reviewAnsweredAttempt != null) reviewAnsweredAttempt else null
         val effectiveScore = if (isSkip) null else if (backfillAttempt?.score != null) backfillAttempt.score else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；

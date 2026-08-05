@@ -223,6 +223,61 @@ class ReplayRunnerTest {
         assertTrue(runner.reviewAnswered)
     }
 
+    // ---- 残余修复（验收 P1）：REINFORCE 作答后补记 assess 用冻结快照（不串强化分数/题型）----
+
+    @Test
+    fun `REINFORCE 作答后补记 assess 仍用 ASSESS 冻结快照`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        // ASSESS 判题（错误 0.0，冻结快照）
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "assess", exerciseType = "audio_choice",
+            dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+        )))
+        runner.tapped("家", correct = false, exerciseId = "e1")   // 0.0
+        runner.advanceReview()   // assess → reinforce（attempt 清空）
+        // REINFORCE 作答（新 attempt，分数 1.0 正确——不得串进 assess 补记）
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "reinforce", exerciseType = "guided_write",
+            dimension = com.literacy.agent.model.Dimension.WRITE,
+        )))
+        runner.tapped("家", correct = true, exerciseId = "e2")
+        // 模型补记 assess（此时 attempt 是 reinforce 且 score=1.0 非 null）
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-frozen"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "补记 assess 不被拒：" + runner.rejectReasons.joinToString("; "))
+        val rec = runner.store.getCharacter("家")
+        // ASSESS 冻结快照 0.0（本地判题真值）——强化阶段的 1.0 不得串入 assess
+        assertEquals(0.0, rec.masteryRecognize.toDouble(), 1e-9, "assess 落库必须用冻结的 0.0，不是强化 1.0")
+        // RECOGNIZE（audio_choice）不串 WRITE 强化题型
+        assertEquals(0, rec.masteryWrite, "强化 WRITE 不得串入 assess")
+    }
+
+    // ---- 残余修复（验收 P1）：RECALL 阶段点击不开 ASSESS 推进门禁 ----
+
+    @Test
+    fun `RECALL 阶段点击不打开 ASSESS 门禁`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        // 当前在 RECALL：点击（异常/历史题）不得产生 ASSESS 证据
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "recall", exerciseType = "audio_choice",
+            dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+        )))
+        runner.tapped("家", correct = true, exerciseId = "e1")
+        assertFalse(runner.reviewAnswered, "RECALL 点击不得置 ASSESS 证据")
+        assertEquals(null, runner.reviewAnsweredAttempt)
+        // 没有证据时 ASSESS→REINFORCE 被门禁挡住
+        runner.advanceReview()   // recall → assess（RECALL 无门禁）
+        assertEquals(com.literacy.agent.model.ReviewStage.ASSESS, runner.state.reviewStage)
+        assertEquals(com.literacy.agent.model.ReviewStage.ASSESS, runner.advanceReview(), "无 ASSESS 证据不得推进 REINFORCE")
+    }
+
     // ---- 残余修复（验收 P1）：复习中插单（REQUEST_NEW_CHAR）清空旧字复习证据 ----
 
     @Test

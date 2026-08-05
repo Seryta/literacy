@@ -18,6 +18,7 @@ class LocalTts(context: Context) {
     private var ready = false
     private var pending: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var pendingGen = -1   // 残余修复（验收 P2）：排队朗读的播放代次（补读校验用）
     // 离线 VITS generate 是同步 CPU 重操作——LocalTts.speak 常被主线程调用
     // （Compose 点击/引导播报），离线路径必须后台生成，不在主线程做 generate。
     // 单线程串行：后进的朗读自然排在后。
@@ -31,7 +32,11 @@ class LocalTts(context: Context) {
                 tts?.language = Locale.CHINESE
                 tts?.setSpeechRate(0.85f)
                 ready = true
-                pending?.let { doSpeak(it); pending = null }
+                // 残余修复（验收 P2）：排队补读校验代次——就绪期间被打断（stop）不播旧文本
+                if (pending != null && pendingGen == VoiceHub.offline.currentSpeakGeneration()) {
+                    doSpeak(pending!!, pendingGen)
+                }
+                pending = null
             }
         }
     }
@@ -47,14 +52,17 @@ class LocalTts(context: Context) {
                 val ok = try { VoiceHub.offline.speak(text, gen) } catch (e: Exception) { false }
                 // 仅真实失败（代次未变）回主线程走系统兜底；被打断/取代则不重播
                 if (!ok && gen == VoiceHub.offline.currentSpeakGeneration()) {
-                    mainHandler.post { doSpeak(text) }
+                    // 残余修复（验收 P2）：主线程 Runnable 内再次校验代次（post 到执行间的窗口被
+                    // stop/新朗读取代则不得系统播报旧文本）
+                    mainHandler.post { doSpeak(text, gen) }
                 }
             }
             return
         }
         if (VoiceHub.initInProgress) {
-            // 离线引擎加载中：排队，等就绪补读（避免走系统无声）
+            // 离线引擎加载中：排队，等就绪补读（避免走系统无声）——排队也占代次（可被打断取消）
             pending = text
+            pendingGen = VoiceHub.offline.nextSpeakGeneration()
             retryWhenReady()
             return
         }
@@ -65,27 +73,32 @@ class LocalTts(context: Context) {
     private fun retryWhenReady() {
         mainHandler.postDelayed({
             if (VoiceHub.offlineTtsReady) {
-                pending?.let {
+                val p = pending
+                val g = pendingGen
+                pending = null
+                // 残余修复（验收 P2）：排队期间被打断（stop/cancelSpeak 作废 pendingGen）→ 丢弃不补读
+                if (p != null && g == VoiceHub.offline.currentSpeakGeneration()) {
                     // 补读同样走后台线程 + 播放代次（打断/新朗读后不播；被取代不系统兜底）
                     val gen = VoiceHub.offline.nextSpeakGeneration()
                     offlineExecutor.execute {
-                        val ok = try { VoiceHub.offline.speak(it, gen) } catch (e: Exception) { false }
+                        val ok = try { VoiceHub.offline.speak(p, gen) } catch (e: Exception) { false }
                         if (!ok && gen == VoiceHub.offline.currentSpeakGeneration()) {
-                            mainHandler.post { doSpeak(it) }
+                            mainHandler.post { doSpeak(p, gen) }
                         }
                     }
-                    pending = null
                 }
             } else if (VoiceHub.initInProgress) {
                 retryWhenReady()
             } else {
-                pending?.let { doSpeak(it); pending = null }
+                pending?.let { doSpeak(it, pendingGen); pending = null }
             }
         }, 800)
     }
 
-    private fun doSpeak(text: String) {
-        if (!ready) { pending = text; return }   // 系统 TTS 初始化中，初始化完成补读
+    private fun doSpeak(text: String, gen: Int = VoiceHub.offline.currentSpeakGeneration()) {
+        // 残余修复（验收 P2）：系统兜底也校验播放代次——被打断/新朗读取代后不播旧文本
+        if (gen != VoiceHub.offline.currentSpeakGeneration()) return
+        if (!ready) { pending = text; pendingGen = gen; return }   // 系统 TTS 初始化中，初始化完成补读
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "onboarding")
         } catch (e: Exception) {

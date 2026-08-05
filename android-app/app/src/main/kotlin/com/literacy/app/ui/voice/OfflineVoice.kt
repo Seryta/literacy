@@ -109,7 +109,7 @@ class OfflineVoiceEngine(
                 // 残余修复（验收 P2）：play 前二次校验代次（play 与代次检查间的窗口被取消则不播）
                 val samples = audio.samples
                 if (samples.isEmpty() || (generation != 0 && generation != ttsGeneration.get())) return false
-                play(samples, audio.sampleRate)
+                play(samples, audio.sampleRate, generation)
                 true
             } catch (e: Exception) {
                 Log.w(tag, "离线 TTS 朗读失败", e)
@@ -123,12 +123,16 @@ class OfflineVoiceEngine(
         audioTrack = null
     }
 
-    private fun play(samples: FloatArray, sampleRate: Int) {
+    private fun play(samples: FloatArray, sampleRate: Int, generation: Int) {
+        // 残余修复（验收 P2）：PCM 转换/建轨/写入是真实播放前的大窗口——转换后、play() 前
+        // 各校验一次代次（此间 cancel+stop 只停已发布 track，看不到未发布的；不查则旧音频仍会响起）
+        if (generation != 0 && generation != ttsGeneration.get()) return
         val short = ShortArray(samples.size)
         for (i in samples.indices) {
             val s = (samples[i] * 32767f).toInt().coerceIn(-32768, 32767)
             short[i] = s.toShort()
         }
+        if (generation != 0 && generation != ttsGeneration.get()) return
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -143,6 +147,10 @@ class OfflineVoiceEngine(
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
         track.write(short, 0, short.size)
+        if (generation != 0 && generation != ttsGeneration.get()) {
+            track.release()   // 窗口内被取消：不播，直接释放
+            return
+        }
         track.play()
         audioTrack = track
     }
@@ -398,10 +406,15 @@ class OfflineVoiceEngine(
     }
 
     fun cancelListening() {
-        cancelled = true
-        listening = false
-        listenGeneration++   // 作废旧代在途回调
-        try { record?.stop() } catch (e: Exception) {}
+        // 残余修复（验收 P1）：与 initStt 恢复块（检查代次 + startListening）同锁串行——
+        // 外部取消要么先于检查（代次变→不恢复），要么后于 startListening（停麦生效），
+        // 不再有"检查通过→取消插入→startListening 覆盖 cancelled"的重新开麦窗口
+        synchronized(sttLock) {
+            cancelled = true
+            listening = false
+            listenGeneration++   // 作废旧代在途回调
+            try { record?.stop() } catch (e: Exception) {}
+        }
     }
 
     fun destroy() {

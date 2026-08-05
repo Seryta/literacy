@@ -47,23 +47,30 @@ class OfflineVoiceEngine(
     fun initTts() {
         val dir = modelManager.ttsDir
         if (!modelManager.ttsReady()) return
-        try {
-            val modelFile = File(dir, "model.onnx")
-            val tokensFile = File(dir, "tokens.txt")
-            val vits = OfflineTtsVitsModelConfig(
-                model = modelFile.absolutePath,
-                tokens = tokensFile.absolutePath,
-                lexicon = File(dir, "lexicon.txt").takeIf { it.isFile }?.absolutePath ?: "",
-            )
-            val modelConfig = OfflineTtsModelConfig(
-                vits = vits,
-                numThreads = 2,
-            )
-            tts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
-            Log.i(tag, "离线 TTS 就绪（中文女声）")
-        } catch (e: Exception) {
-            Log.w(tag, "离线 TTS 初始化失败，回退系统", e)
-            tts = null
+        // 残余修复（验收 P2）：重建前停止播放并释放旧 native 实例（重复下载/重初始化不遗留）；
+        // 构建+赋值整体在锁内——speak 不得在 release 与替换之间并发拿已释放实例
+        synchronized(ttsLock) {
+            cancelSpeak()
+            stop()
+            tts?.release()
+            try {
+                val modelFile = File(dir, "model.onnx")
+                val tokensFile = File(dir, "tokens.txt")
+                val vits = OfflineTtsVitsModelConfig(
+                    model = modelFile.absolutePath,
+                    tokens = tokensFile.absolutePath,
+                    lexicon = File(dir, "lexicon.txt").takeIf { it.isFile }?.absolutePath ?: "",
+                )
+                val modelConfig = OfflineTtsModelConfig(
+                    vits = vits,
+                    numThreads = 2,
+                )
+                tts = OfflineTts(config = OfflineTtsConfig(model = modelConfig))
+                Log.i(tag, "离线 TTS 就绪（中文女声）")
+            } catch (e: Exception) {
+                Log.w(tag, "离线 TTS 初始化失败，回退系统", e)
+                tts = null
+            }
         }
     }
 
@@ -162,6 +169,7 @@ class OfflineVoiceEngine(
             val wasListening = listening
             val savedOnResult = onResult
             val savedAutoRestart = autoRestart
+            val savedGen = listenGeneration   // 残余修复（验收 P1）：重建期间被 cancel（退后台）则恢复时不再开麦
             cancelListening()
             listenThread?.let { old ->
                 try { old.join(2000) } catch (e: InterruptedException) {}
@@ -207,8 +215,10 @@ class OfflineVoiceEngine(
                 recognizer = null
             }
             // 重建前有活动监听：自动恢复（synchronized 可重入；新 recognizer 已就绪）——
-            // 不做则监听静默死亡，用户说话无声
-            if (wasListening && recognizer != null) {
+            // 不做则监听静默死亡，用户说话无声。
+            // 残余修复（验收 P1）：重建期间若被页面 cancel（退后台，listenGeneration 已变），
+            // 不再自动开麦（否则恢复会覆盖退后台取消、在后台重新开麦）
+            if (wasListening && recognizer != null && listenGeneration == savedGen) {
                 val ok = startListening(savedOnResult ?: {}, onPartialCb ?: {}, savedAutoRestart)
                 if (!ok) Log.w(tag, "initStt 重建后恢复监听失败（无输入设备？）")
             }

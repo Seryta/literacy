@@ -275,6 +275,7 @@ class ReplayRunner(
         )))
         reviewAnswered = true   // review-09 P1-4：判题证据
         reviewAnsweredScore = if (correct) 1.0 else 0.0   // 残余修复：本地判题真值（补记 assess 用）
+        reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)   // 完整本地上下文（题型+维度+分数）
         val ev = ButtonTapped(action, correct, exerciseId)
         lastEvent = ev
         judgePhase(ev)
@@ -293,6 +294,7 @@ class ReplayRunner(
         // review-09 P1-9：按复习字边界清零判题证据（新复习字需重新作答）
         reviewAnswered = false
         reviewAnsweredScore = null
+        reviewAnsweredAttempt = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(
             mode = Mode.REVIEW,
@@ -319,6 +321,8 @@ class ReplayRunner(
     var reviewAnswered: Boolean = false
     /** 本地判题真值分数（reviewAnswered 对应 1.0/0.0）——补记 assess 用本地分，防模型改分。 */
     var reviewAnsweredScore: Double? = null
+    /** 完整本地判题上下文（score+题型+维度）——补记 assess 恢复本地绑定，防模型题型/最弱维度误更新。 */
+    var reviewAnsweredAttempt: com.literacy.agent.model.AttemptContext? = null
         private set
 
     /** 本复习轮（当前字）已落库 assess 的字集合——
@@ -366,6 +370,7 @@ class ReplayRunner(
         if (reviewQueue.isEmpty()) return false
         reviewAnswered = false   // review-09 P1-4：下一复习字重新判题
         reviewAnsweredScore = null   // 残余修复：本地判题真值同步清（防跨字借用）
+        reviewAnsweredAttempt = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(char = reviewQueue.removeFirst(), reviewStage = ReviewStage.RECALL)
         return true
@@ -805,16 +810,18 @@ class ReplayRunner(
         // （原 ?: 0.0 不可达，删除）——本地权威优先，模型分数兜底
         // 残余修复：补记 assess（attempt 被 advanceReview 清空、reviewAnswered 门禁路径）
         // 必须用本地判题真值（reviewAnsweredScore），不得用模型分数覆盖本地判题结果
-        val effectiveScore = if (isSkip) null else if (
-            phase == "assess" && attempt?.score == null && reviewAnswered && reviewAnsweredScore != null
-        ) reviewAnsweredScore else (attempt?.score ?: score)
+        val backfillAttempt = if (phase == "assess" && attempt?.score == null && reviewAnswered) reviewAnsweredAttempt else null
+        val effectiveScore = if (isSkip) null else if (backfillAttempt?.score != null) backfillAttempt.score else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
         // review-09 P1-8：题型优先用本地绑定的 attempt.exerciseType（选择题 App 层已绑定，
         // 模型回传缺失/篡改不得覆盖本地判题语义）；复习轮也按题型推维度（听音选字更新识读而非书写），
         // 无题型才兜底最弱（事务内）
-        val localExerciseType = attempt?.exerciseType ?: result["exercise_type"] as? String
-        val baseDim = attempt?.dimension
+        // 残余修复（验收 P1）：补记 assess 恢复完整本地上下文——题型/维度随本地判题保存，
+        // 不重新信任模型 exercise_type（缺失/篡改）或退回最弱维度（audio_choice 不得误更新 WRITE）
+        val localExerciseType = backfillAttempt?.exerciseType ?: attempt?.exerciseType ?: result["exercise_type"] as? String
+        val baseDim = backfillAttempt?.dimension
+            ?: attempt?.dimension
             ?: dimensionForPhase(phase, localExerciseType)
         val promptLevelStr = result["prompt_level"]?.toString()   // 兼容 YAML 数字与字符串
         // review-09 P1-15：裁决+排期全在事务内基于最新记录重算（并发 lost update 修复）；

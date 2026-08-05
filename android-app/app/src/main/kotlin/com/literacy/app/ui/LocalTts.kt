@@ -102,6 +102,13 @@ class LocalTts(context: Context) {
     }
 
     fun shutdown() {
+        // 残余修复（验收 P1）：页面生命周期闭合——关 executor（排队任务不再执行）、
+        // 取消延迟回调、作废播放代次并停离线 AudioTrack、关系统 TTS
+        try { offlineExecutor.shutdownNow() } catch (e: Exception) {}
+        mainHandler.removeCallbacksAndMessages(null)
+        VoiceHub.offline.cancelSpeak()
+        VoiceHub.offline.stop()
+        pending = null
         try { tts?.shutdown() } catch (e: Exception) {}
     }
 }

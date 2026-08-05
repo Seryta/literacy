@@ -89,7 +89,10 @@ class SpeechInputManager(context: Context) {
                 when {
                     // 连续监听：用户没说话/没听清 → 静默重启继续听（不打扰）
                     autoRestart && !cancelled && (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) -> {
-                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 400)
+                        // 残余修复（验收 P2）：延迟 restart 绑定当前代次——旧代安排的延迟任务
+                        // 执行时若已 cancel+新 start（generation 已变），不得重启新监听
+                        val restartGen = generation
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart(restartGen) }, 400)
                     }
                     // 硬错误：停止循环并上报
                     else -> {
@@ -116,7 +119,7 @@ class SpeechInputManager(context: Context) {
                     onResult?.invoke(SpeechOutcome.Text(text))
                     // 连续监听：识别完稍停继续听（用户可能继续说）
                     if (autoRestart && !cancelled) {
-                        android.os.Handler(appContext.mainLooper).postDelayed({ restart() }, 500)
+                        android.os.Handler(appContext.mainLooper).postDelayed({ restart(gen) }, 500)
                     }
                 } else {
                     onError(SpeechRecognizer.ERROR_NO_MATCH)
@@ -150,10 +153,10 @@ class SpeechInputManager(context: Context) {
         return true
     }
 
-    private fun restart() {
-        if (cancelled || !autoRestart) return
+    private fun restart(expectedGen: Int) {
+        if (cancelled || !autoRestart || expectedGen != generation) return   // 旧代延迟任务不重启新监听
         try { recognizer?.startListening(buildIntent()) } catch (e: Exception) {
-            onResult?.invoke(SpeechOutcome.Error("语音识别异常，请点一下宠物再说话"))
+            if (expectedGen == generation) onResult?.invoke(SpeechOutcome.Error("语音识别异常，请点一下宠物再说话"))
         }
     }
 

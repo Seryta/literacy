@@ -223,6 +223,39 @@ class ReplayRunnerTest {
         assertTrue(runner.reviewAnswered)
     }
 
+    // ---- 残余修复（验收 P1）：补记 assess 保留本地题型/维度（audio_choice 不误写 WRITE）----
+
+    @Test
+    fun `补记 assess 保留本地题型与维度（audio_choice 不误写 WRITE）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        // 本地判题：audio_choice 题型（识读），正确 → 1.0
+        runner.configureState(runner.state.copy(attempt = com.literacy.agent.model.AttemptContext(
+            phase = "assess",
+            exerciseType = "audio_choice",
+            dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+        )))
+        runner.tapped("家", correct = true, exerciseId = "e1")
+        runner.configureState(runner.state.copy(attempt = null))   // advanceReview 清 attempt（新 key）
+        runner.advanceReview()   // assess → reinforce
+        // 模型补记 assess（模型不带 exercise_type——验证退本地而非模型/最弱维度）
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "rev-backfill-dim"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "补记 assess 不被拒")
+        val result = runner.store.results.single()
+        assertEquals("assess", result.phase)
+        // 题型必须是本地绑定的 audio_choice（补记不退回模型题型/最弱维度）
+        assertEquals("audio_choice", result.exerciseType)
+        // 掌握度更新到 RECOGNIZE（识读正确 +1），WRITE 不得被误提升
+        val rec = runner.store.getCharacter("家")
+        assertEquals(1, rec.masteryRecognize)
+        assertEquals(0, rec.masteryWrite, "audio_choice 补记不得误更新 WRITE")
+    }
+
     // ---- review-11 P1-7：skip 落库 score=null + 跳过原因保存 ----
 
     @Test

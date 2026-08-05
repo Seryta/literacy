@@ -158,9 +158,13 @@ class LearnViewModel(
         tts = null
     }
 
-    /** 停止当前朗读（用户开口打断教学语——实时对话）。 */
+    /** 停止当前朗读（用户开口打断教学语——实时对话）。
+     *  残余修复（验收 P1）：同时作废离线播放代次 + 停离线 AudioTrack——
+     *  学习页优先用离线 TTS，只停系统 TextToSpeech 无法打断离线语音。 */
     fun stopTts() {
-        try { tts?.stop() } catch (e: Exception) {}
+        com.literacy.app.ui.voice.VoiceHub.offline.cancelSpeak()   // 作废播放代次（排队/生成中任务不播）
+        com.literacy.app.ui.voice.VoiceHub.offline.stop()          // 停正在播放的离线 AudioTrack
+        try { tts?.stop() } catch (e: Exception) {}                // 系统 TTS 兜底
     }
 
     /** 开始学习一个字（支持 "字:stage" 直达格式，开发模式用）。 */

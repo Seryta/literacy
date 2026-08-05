@@ -112,11 +112,17 @@ class ModelManager(context: Context) {
             if (verify(targetDir, spec)) return@withContext true
             spec.files.forEachIndexed { i, (path, sha256) ->
                 val dest = File(targetDir, path.substringAfterLast('/'))
-                if (!(dest.isFile && dest.length() > 0)) {
+                // 残余修复：仅当文件存在且通过哈希校验才跳过——哈希错误的非空坏文件
+                // 也要删除重下（否则 verify=false 永不自愈）；.verified 标记也一并清掉
+                if (dest.isFile && dest.length() > 0 && sha256(dest).equals(sha256, ignoreCase = true)) {
+                    // 已就绪，跳过
+                } else {
+                    dest.delete()
                     downloadFile(VoiceModels.fileUrl(spec, path), dest, sha256)
                 }
                 onProgress(((i + 1) * 100 / spec.files.size).coerceAtMost(100))
             }
+            File(targetDir, ".verified").delete()   // 清旧标记（verify 会按新文件重写）
             verify(targetDir, spec)
         }
 

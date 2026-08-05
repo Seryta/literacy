@@ -274,6 +274,7 @@ class ReplayRunner(
             score = if (correct) 1.0 else 0.0,
         )))
         reviewAnswered = true   // review-09 P1-4：判题证据
+        reviewAnsweredScore = if (correct) 1.0 else 0.0   // 残余修复：本地判题真值（补记 assess 用）
         val ev = ButtonTapped(action, correct, exerciseId)
         lastEvent = ev
         judgePhase(ev)
@@ -291,6 +292,7 @@ class ReplayRunner(
         if (reviewQueue.isEmpty()) return false
         // review-09 P1-9：按复习字边界清零判题证据（新复习字需重新作答）
         reviewAnswered = false
+        reviewAnsweredScore = null
         state = state.copy(
             mode = Mode.REVIEW,
             reviewStage = ReviewStage.RECALL,
@@ -314,6 +316,8 @@ class ReplayRunner(
     /** 复习判题证据标记（review-09 P1-4）：判题（tapped）或 record_result（assess/reinforce）后置位，
      *  ASSESS→REINFORCE 门禁要求有证据——用户不能从 recall 无证据点到 next。 */
     var reviewAnswered: Boolean = false
+    /** 本地判题真值分数（reviewAnswered 对应 1.0/0.0）——补记 assess 用本地分，防模型改分。 */
+    var reviewAnsweredScore: Double? = null
         private set
 
     /** 作答完成标记（review-09 P1-4）：App 端判题选项点击即作答完成（对错由模型 record_result 裁决）。 */
@@ -773,7 +777,11 @@ class ReplayRunner(
         // 其余尝试本地权威优先（写评估/判题分数）
         // review-11 批A：非 skip 的 score==null 已在上方拒绝，attempt?.score ?: score 不可能为 null
         // （原 ?: 0.0 不可达，删除）——本地权威优先，模型分数兜底
-        val effectiveScore = if (isSkip) null else (attempt?.score ?: score)
+        // 残余修复：补记 assess（attempt 被 advanceReview 清空、reviewAnswered 门禁路径）
+        // 必须用本地判题真值（reviewAnsweredScore），不得用模型分数覆盖本地判题结果
+        val effectiveScore = if (isSkip) null else if (
+            phase == "assess" && attempt?.score == null && reviewAnswered && reviewAnsweredScore != null
+        ) reviewAnsweredScore else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
         // review-09 P1-8：题型优先用本地绑定的 attempt.exerciseType（选择题 App 层已绑定，
@@ -808,7 +816,7 @@ class ReplayRunner(
                 // review-09 P1-12：guided_write（跟写）是教学流程，不提升硬掌握度——
                 // 仅 independent_write 是硬性检测点（MASTERY-CRITERIA §4）
                 val localLevel = attempt?.promptLevel ?: state.promptLevel
-                adjudicator.adjudicate(latest, dim, ok, localLevel, isReview = state.mode == Mode.REVIEW)
+                adjudicator.adjudicate(latest, dim, ok, localLevel, isReview = state.mode == Mode.REVIEW, today = java.time.LocalDate.now().toString())
             } else latest
             // P1-1：学习轮 + 复习轮都排期（等级1→当天，等级2→1-3天，§2/§6）——复习队列生产链路不再为空
             // review-10 P1-2：skip 不参与排期（跳过不改变间隔/ease）

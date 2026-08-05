@@ -210,7 +210,9 @@ class AgentOrchestrator(
             else -> "recognize"
         }
         val dim = when {
-            reviewMode -> null
+            // 残余修复：复习口答模态明确是识读——本地绑定 RECOGNIZE 维度，
+            // 不信任模型 exercise_type/最弱维度（口答正确不得更新 WRITE 等错误维度）
+            reviewMode -> com.literacy.agent.model.Dimension.RECOGNIZE
             phase == "explain" -> com.literacy.agent.model.Dimension.UNDERSTAND
             phase == "sentence" -> com.literacy.agent.model.Dimension.APPLY
             else -> com.literacy.agent.model.Dimension.RECOGNIZE

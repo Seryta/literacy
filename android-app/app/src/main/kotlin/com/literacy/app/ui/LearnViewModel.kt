@@ -97,6 +97,7 @@ class LearnViewModel(
         // review-09 P1-13：VM 销毁同样取消在途请求（Activity 级 VM 可能不随 composable 销毁）
         orchestrator.cancelInFlight()
         httpTransport.cancelActive()
+        speakJob?.cancel()   // 残余修复：离页取消离线 TTS 协程（不重播旧教学语/不并发）
         releaseTts()
         super.onCleared()
     }
@@ -113,6 +114,7 @@ class LearnViewModel(
         get() = orchestrator.currentCharStrokes
 
     private var tts: TextToSpeech? = null
+    private var speakJob: kotlinx.coroutines.Job? = null   // 离线 TTS 协程（串行 + 离页取消）
     private var ttsReady = false
 
     /** 绑定 TTS（Activity 创建时）。引擎异步就绪后补播当前教学语。 */
@@ -141,11 +143,14 @@ class LearnViewModel(
     fun cancelInFlight() {
         orchestrator.cancelInFlight()
         httpTransport.cancelActive()
+        speakJob?.cancel()   // 残余修复：离页取消在途离线 TTS
+        speakJob = null
         currentJob?.cancel()
         currentJob = null
     }
 
     fun releaseTts() {
+        com.literacy.app.ui.voice.VoiceHub.offline.stop()   // 残余修复：停离线 AudioTrack（释放资源）
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -285,7 +290,9 @@ class LearnViewModel(
             if (com.literacy.app.ui.voice.VoiceHub.offlineTtsReady) {
                 // review-09 W3：VITS generate 是同步 CPU 重操作（长文本可卡主线程 1s+）→
                 // 后台线程生成+播放；完成后切回主线程回调（onTtsCompleted 改 runner 状态）
-                viewModelScope.launch {
+                // 残余修复：串行化 + 页面生命周期——新 speak 取消旧任务；离页（onCleared）取消
+                speakJob?.cancel()
+                speakJob = viewModelScope.launch {
                     val ok = withContext(Dispatchers.IO) {
                         try { com.literacy.app.ui.voice.VoiceHub.offline.speak(text) }
                         catch (e: Exception) { false }

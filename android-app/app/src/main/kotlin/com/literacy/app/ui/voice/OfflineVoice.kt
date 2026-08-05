@@ -115,6 +115,7 @@ class OfflineVoiceEngine(
     @Volatile private var autoRestart = false
     @Volatile private var onResult: ((String) -> Unit)? = null
     @Volatile private var listenThread: Thread? = null   // 采集线程（start 前 join 旧线程，避免并发操作 recognizer 崩溃）
+    @Volatile private var listenGeneration = 0   // 监听代次：取消/重启后旧代结果不投递（防穿透）
 
     fun initStt() {
         val dir = modelManager.sttDir
@@ -123,6 +124,12 @@ class OfflineVoiceEngine(
         cancelListening()
         listenThread?.let { old ->
             try { old.join(2000) } catch (e: InterruptedException) {}
+            // 残余修复：旧线程仍存活（可能停在 native decode）→ 不释放正在使用的
+            // recognizer（release 正在使用的句柄会再次 native 闪退），放弃本次重建
+            if (old.isAlive) {
+                Log.w(tag, "initStt 重建：旧采集线程仍存活（2s 超时），放弃重建避免释放使用中的 recognizer")
+                return
+            }
         }
         try {
             val encoder = File(dir, "encoder-epoch-99-avg-1.onnx").absolutePath
@@ -182,6 +189,7 @@ class OfflineVoiceEngine(
         this.onResult = onResultText
         this.autoRestart = autoRestart
         listening = true
+        val generation = ++listenGeneration   // 新一代监听，旧代在途回调作废
 
         val sampleRate = 16000
         val minBuf = AudioRecord.getMinBufferSize(
@@ -268,7 +276,8 @@ class OfflineVoiceEngine(
                                     silentMs = 0L   // 新文本视为正在说话（停顿不截断）
                                     val t = text
                                     Log.d(tag, "实时转写: $t")
-                                    mainHandler.post { onPartial(t) }   // 实时字幕
+                                    val gen = generation
+                                    mainHandler.post { if (gen == listenGeneration) onPartial(t) }   // 实时字幕（代次校验防穿透）
                                 }
                             }
                         }
@@ -290,15 +299,16 @@ class OfflineVoiceEngine(
                         // review-09 P1-04（C1）：解码完成后再检查一次——取消可能发生在
                         // 尾解码期间；不得把结果投递给 onResult（触发在途 LLM 调用/工具写库）
                         if (cancelled) return@Thread
-                        // 一句话结束：回调最终结果（尾音解码后的文本优先）
+                        // 一句话结束：回调最终结果（尾音解码后的文本优先；代次校验防穿透到新监听）
+                        val gen = generation
                         if (finalText.isNotBlank()) {
                             val t = finalText
                             Log.d(tag, "识别结果: $t")
-                            mainHandler.post { onResult?.invoke(t) }
+                            mainHandler.post { if (gen == listenGeneration) onResult?.invoke(t) }
                         } else if (fullText.isNotBlank()) {
                             val t = fullText
                             Log.d(tag, "识别结果: $t")
-                            mainHandler.post { onResult?.invoke(t) }
+                            mainHandler.post { if (gen == listenGeneration) onResult?.invoke(t) }
                         } else {
                             Log.d(tag, "识别超时/无结果（静音）")
                         }
@@ -323,6 +333,7 @@ class OfflineVoiceEngine(
     fun cancelListening() {
         cancelled = true
         listening = false
+        listenGeneration++   // 作废旧代在途回调
         try { record?.stop() } catch (e: Exception) {}
     }
 

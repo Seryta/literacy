@@ -57,6 +57,7 @@ class MasteryAdjudicator {
         ok: Boolean,
         promptLevel: Int,
         isReview: Boolean = false,
+        today: String = "",
     ): CharacterRecord {
         val current = record.mastery(dim)
         // P1-17：连续计数累计所有成功（该维度一个递增、另一个清零——不污染其他维度）。
@@ -67,12 +68,14 @@ class MasteryAdjudicator {
         } else {
             record.withStreak(dim, 0, record.streakErrors(dim) + 1)
         }
-        val gate = if (ok && qualifies(current, promptLevel, isReview)) {
+        // 残余修复：gateStreak 只在“间隔日”累计——同一天（同日多次作答）只算一次间隔复习，
+        // 防止同一复习轮用多个 key 凑成三次间隔把 L3 直接抬到 L4
+        val newGate = if (ok && qualifies(current, promptLevel, isReview) && record.lastReview != today) {
             record.gateStreak(dim) + 1
         } else 0
 
         val next = when {
-            ok -> upgrade(withStreak, gate, dim, current, promptLevel, isReview)
+            ok -> upgrade(withStreak, newGate, dim, current, promptLevel, isReview)
             isReview && promptLevel >= 3 -> maxOf(0, current - 1)   // 复习出错 + ≥L3 提示 → 降一级
             else -> current                                          // 非复习轮出错不降级
         }
@@ -86,7 +89,7 @@ class MasteryAdjudicator {
         val final = if (next > current && next > singleLevel) {
             updated.withGateStreak(dim, 0).withStreak(dim, 0, 0)   // 门槛升级后达标链清零
         } else {
-            updated.withGateStreak(dim, gate)   // 达标链随记录保存（持久化）
+            updated.withGateStreak(dim, newGate)   // 达标链随记录保存（持久化）
         }
         return final.copy(status = final.deriveStatus())
     }

@@ -45,7 +45,14 @@ class OkHttpTransport(
             .post(body.toRequestBody("application/json".toMediaType()))
         headers.forEach { (k, v) -> requestBuilder.header(k, v) }
         val call = client.newCall(requestBuilder.build())
+        // 残余修复：登记 activeCall 后二次检查取消——cancelActive 可能发生在检查 cancelled 与
+        // 赋值 activeCall 之间（取消线程此时看不到 Call）；登记后再检查，取消则立即 cancel 不执行
         activeCall = call
+        if (cancelled) {
+            call.cancel()
+            activeCall = null
+            throw ProviderException("传输已取消（页面已离开）", retryable = false)
+        }
         try {
             call.execute().use { resp ->
                 return HttpResponse(resp.code, resp.body?.string() ?: "")

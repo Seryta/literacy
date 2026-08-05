@@ -139,6 +139,11 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     }
     // 场景切换 → 登记协调器上下文（沉默多久提示什么）
     LaunchedEffect(screen, needOnboarding) {
+        // 非自动监听页（设置/建档/关于/角色）：清空 autoListenRestart，
+        // 防止回前台 ON_RESUME 重启旧页（首页/学习页）的麦克风监听
+        if (!needOnboarding && screen != Screen.LEARN && screen != Screen.HOME) {
+            autoListenRestart.value = null
+        }
         when {
             needOnboarding -> voiceFlow.setContext(
                 com.literacy.app.ui.voice.VoiceFlowCoordinator.Context(

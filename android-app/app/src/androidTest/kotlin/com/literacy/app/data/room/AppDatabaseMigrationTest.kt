@@ -65,9 +65,9 @@ class AppDatabaseMigrationTest {
         // 2) 真实 migration 1→2（唯一索引由 migration 创建；validateDroppedTables=true 校验 schema）
         helper.runMigrationsAndValidate(TEST_DB, 2, true, AppDatabase.MIGRATION_1_2).close()
 
-        // 3) 迁移后开新版本库：数据全部保留（当前 Room 版本 3，需注册 2→3）
+        // 3) 迁移后开新版本库：数据全部保留（当前 Room 版本 5，需注册 2→3/3→4/4→5）
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .build()
         val dao = db.learningDao()
         assertEquals(1, dao.getAllResults().size)
@@ -76,18 +76,18 @@ class AppDatabaseMigrationTest {
         assertEquals(1, dao.getCharacter("家")?.masteryRecognize)
         assertEquals(1, dao.getSession(1)?.id)
 
-        // 4) 复合唯一索引真实生效（review-09 P1-16）：同 session+同 char+同 phase+同 key 二次插入
-        //    被 IGNORE（-1L，retry 重发语义）；不同 phase 的同 key 是独立证据，正常插入
+        // 4) 全局唯一索引真实生效（review-09 P1-10）：同 key 二次插入（含换 phase）都被 IGNORE（-1L）——
+        //    App 签发 key 全局去重，换 phase 不得重复计分
         assertEquals("同尝试 retry 重发应 IGNORE", -1L, dao.insertResult(
             SessionResultEntity(sessionId = 1, char = "家", phase = "recognize", score = 0.8, idempotencyKey = "key-1"),
         ))
         assertEquals(1, dao.getAllResults().size)
-        assertTrue("不同 phase 的同 key 是独立证据（P1-16）",
+        assertEquals("同 key 换 phase 应 IGNORE（全局去重，P1-10）", -1L,
             dao.insertResult(
                 SessionResultEntity(sessionId = 1, char = "家", phase = "assess", score = 0.8, idempotencyKey = "key-1"),
-            ) > 0,
+            ),
         )
-        assertEquals(2, dao.getAllResults().size)
+        assertEquals(1, dao.getAllResults().size)
         db.close()
     }
 
@@ -129,23 +129,23 @@ class AppDatabaseMigrationTest {
 
         // 3) 去重结果：同 key 只留最早一行（全局索引约束）
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .build()
         val rows = db.learningDao().getAllResults()
         assertEquals(1L, rows.size.toLong())
         assertEquals("dup-1", rows.single().idempotencyKey)
         assertEquals("最早一行保留", "recognize", rows.single().phase)
 
-        // 4) 最终库 v4（复合索引）：同 session+char+phase+key 重发被 IGNORE；不同 phase 是独立证据
+        // 4) 最终库 v5（全局唯一索引，review-09 P1-10）：同 key 任意 phase 重发都被 IGNORE
         assertEquals(-1L, db.learningDao().insertResult(
             SessionResultEntity(sessionId = 1, char = "家", phase = "recognize", score = 0.5, idempotencyKey = "dup-1"),
         ))
-        assertTrue("不同 phase 独立证据可插入（v4 复合索引）",
+        assertEquals("同 key 换 phase 也 IGNORE（全局去重）", -1L,
             db.learningDao().insertResult(
                 SessionResultEntity(sessionId = 1, char = "家", phase = "assess", score = 0.5, idempotencyKey = "dup-1"),
-            ) > 0,
+            ),
         )
-        assertEquals(2, db.learningDao().getAllResults().size)
+        assertEquals(1, db.learningDao().getAllResults().size)
         db.close()
     }
 
@@ -183,12 +183,12 @@ class AppDatabaseMigrationTest {
         }
 
         // 2) 真实 migration 2→3（validateDroppedTables=true：建新表流程后 schema 与实体精确一致）
-        // review-10 P0：Room 当前版本 4——校验目标 4，迁移链 2→3→4（3_4 做索引替换）
-        helper.runMigrationsAndValidate(TEST_DB, 4, true, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).close()
+        // review-10 P0：Room 当前版本 5——校验目标 5，迁移链 2→3→4→5（3_4 索引替换、4_5 全局索引+新列）
+        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).close()
 
         // 3) 迁移后：数据保留 + 旧 streak 迁移语义
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .build()
         val dao = db.learningDao()
         assertEquals(3, dao.getAllCharacters().size)   // 三字全部保留
@@ -234,19 +234,82 @@ class AppDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(TEST_DB, 4, true, AppDatabase.MIGRATION_3_4).close()
+        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .build()
         val rows = db.learningDao().getAllResults()
         assertEquals("v3 数据迁移保留", 2L, rows.size.toLong())
-        // 复合索引生效：同 session+char+phase+key 冲突，不同 phase 的同 key 是独立证据
+        // 全局唯一索引生效（review-09 P1-10）：同 key 任意 phase 重发都 IGNORE
         assertEquals("同尝试 retry 重发应 IGNORE", -1L,
             db.learningDao().insertResult(
                 SessionResultEntity(sessionId = 1, char = "家", phase = "recognize", score = 0.8, idempotencyKey = "v3-key-1"),
             ),
         )
+        assertEquals("同 key 换 phase 也 IGNORE（全局去重）", -1L,
+            db.learningDao().insertResult(
+                SessionResultEntity(sessionId = 1, char = "家", phase = "assess", score = 0.8, idempotencyKey = "v3-key-1"),
+            ),
+        )
+        assertEquals(2, db.learningDao().getAllResults().size)
+        db.close()
+    }
+
+    /**
+     * v4→v5（review-09 P1-10 + P1-11）：复合索引（sessionId+char+phase+key）→ 全局唯一索引
+     * （App 签发 key 全局去重，换 phase 不得重复计分）+ characters 新增 gateStreak 四列（达标链持久化）。
+     */
+    @Test
+    fun migrate4To5_globalKeyDedup_andGateStreakColumns() {
+        // 1) 建 v4 库 + 灌数据（v4 复合索引允许同 key 换 phase 双计）
+        helper.createDatabase(TEST_DB, 4).apply {
+            execSQL(
+                "INSERT INTO session_character_results (sessionId, char, phase, exerciseType, score, " +
+                    "issues, promptLevel, idempotencyKey) " +
+                    "VALUES (1, '家', 'recognize', NULL, 1.0, '[]', 'L3', 'v4-key-1')",
+            )
+            execSQL(
+                "INSERT INTO session_character_results (sessionId, char, phase, exerciseType, score, " +
+                    "issues, promptLevel, idempotencyKey) " +
+                    "VALUES (1, '家', 'assess', NULL, 0.8, '[]', 'L3', 'v4-key-1')",
+            )
+            execSQL(
+                "INSERT INTO characters (char, pinyin, masteryRecognize, masteryWrite, masteryUnderstand, " +
+                    "masteryApply, status, currentPromptLevel, streakRecognizeSuccess, streakRecognizeErrors, " +
+                    "streakWriteSuccess, streakWriteErrors, streakUnderstandSuccess, streakUnderstandErrors, " +
+                    "streakApplySuccess, streakApplyErrors, commonMistakes, easeFactor, intervalDays) " +
+                    "VALUES ('家', 'jiā', 1, 0, 0, 0, 'learning', 3, 1, 0, 0, 0, 0, 0, 0, 0, '[]', 2.5, 0)",
+            )
+            close()
+        }
+
+        // 2) 真实 migration 4→5
+        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_4_5).close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
+            .addMigrations(AppDatabase.MIGRATION_4_5)
+            .build()
+        val dao = db.learningDao()
+        // 数据保留；同 key 去重（v4 时代同 key 换 phase 的双计行保留最早一条）
+        val rows = dao.getAllResults()
+        assertEquals(1L, rows.size.toLong())
+        assertEquals("recognize", rows.single().phase)
+        // 全局唯一索引生效：同 key 任意 phase 重发 IGNORE
+        assertEquals(-1L, dao.insertResult(
+            SessionResultEntity(sessionId = 1, char = "家", phase = "assess", score = 0.8, idempotencyKey = "v4-key-1"),
+        ))
+        // gateStreak 四列存在且默认 0（迁移 ADD COLUMN）
+        val rec = dao.getCharacter("家")!!
+        assertEquals(0, rec.gateStreakRecognize)
+        assertEquals(0, rec.gateStreakWrite)
+        assertEquals(0, rec.gateStreakUnderstand)
+        assertEquals(0, rec.gateStreakApply)
+        // gateStreak 写入后可读回（持久化生效）
+        dao.upsertCharacter(rec.copy(gateStreakRecognize = 2, gateStreakWrite = 1))
+        val saved = dao.getCharacter("家")!!
+        assertEquals(2, saved.gateStreakRecognize)
+        assertEquals(1, saved.gateStreakWrite)
         db.close()
     }
 }

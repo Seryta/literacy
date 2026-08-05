@@ -65,8 +65,15 @@ class ModelManager(context: Context) {
     private fun verify(dir: File, spec: VoiceModels.ModelSpec): Boolean {
         val marker = File(dir, ".verified")
         val expected = markerContent(spec)
-        // 缓存命中：标记存在且内容匹配 → 直接就绪（不重算 84MB 哈希）
-        if (marker.isFile && marker.readTextOrNull() == expected) return true
+        // 缓存命中：标记存在且内容匹配 → 快路径（只确认清单文件存在+非空，不重算 84MB 哈希）
+        if (marker.isFile && marker.readTextOrNull() == expected) {
+            // review-09 P1-05：快路径至少确认清单文件存在+非空（标记残留时缺失/损坏模型不得进入 JNI）
+            val filesExist = spec.files.all { (path, _) ->
+                val f = File(dir, path.substringAfterLast('/'))
+                f.isFile && f.length() > 0
+            }
+            if (filesExist) return true
+        }
         val ok = spec.files.all { (path, sha) ->
             val f = File(dir, path.substringAfterLast('/'))
             f.isFile && f.length() > 0 && sha256(f).equals(sha, ignoreCase = true)
@@ -113,8 +120,10 @@ class ModelManager(context: Context) {
             verify(targetDir, spec)
         }
 
-    /** 下载 + SHA256 校验（防投毒：与官方哈希不一致即删文件抛异常）。 */
+    /** 下载 + SHA256 校验（防投毒：与官方哈希不一致即删文件抛异常）。
+     *  review-09 P1-05：先写临时文件再原子 rename——残片不占最终文件名，重下不受阻。 */
     private fun downloadFile(url: String, dest: File, expectedSha256: String) {
+        val tmp = File(dest.parentFile, dest.name + ".part")
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 60000
@@ -124,13 +133,19 @@ class ModelManager(context: Context) {
             val code = conn.responseCode
             if (code != 200) throw RuntimeException("下载失败 HTTP $code")
             conn.inputStream.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+                tmp.outputStream().use { output -> input.copyTo(output) }
             }
             // SHA256 校验：与官方一致才通过，否则视为异常文件删除
-            val actual = sha256(dest)
+            val actual = sha256(tmp)
             if (!actual.equals(expectedSha256, ignoreCase = true)) {
-                dest.delete()
+                tmp.delete()
                 throw RuntimeException("文件校验失败（可能被篡改）：${dest.name}")
+            }
+            // 原子替换：先删旧目标再 rename（rename 失败视为写入异常，不残留半文件）
+            dest.delete()
+            if (!tmp.renameTo(dest)) {
+                tmp.delete()
+                throw RuntimeException("文件写入失败：${dest.name}")
             }
         } finally {
             conn.disconnect()

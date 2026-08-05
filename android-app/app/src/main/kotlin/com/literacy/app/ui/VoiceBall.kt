@@ -155,12 +155,16 @@ class SpeechInputManager(context: Context) {
         cancelled = true
         autoRestart = false
         recognizer?.cancel()
+        // review-09 P1-04：离线麦也要停（此前只停系统识别器，退后台离线继续采集）
+        com.literacy.app.ui.voice.VoiceHub.offline.cancelListening()
     }
 
     fun destroy() {
         cancelled = true
         recognizer?.destroy()
         recognizer = null
+        // review-09 P1-04：统一离线识别器的生命周期入口
+        com.literacy.app.ui.voice.VoiceHub.offline.cancelListening()
     }
 }
 

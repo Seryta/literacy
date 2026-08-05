@@ -44,6 +44,8 @@ class AgentOrchestrator(
         // 真实模式：推进由 LLM 的 advance_phase 工具触发（事件只记录 + 本地裁决），
         // 避免"事件自动推进 + 模型 advance_phase"双重推进（JVM 真实模式同语义）
         autoAdvance = false
+        // review-09 P1-7：生产严格校验——record_result 必须回传 App 签发的幂等键 + 本地 attempt
+        strictResultValidation = true
         // review-09 P1-6：complete_character 后进入下一字——姓名目标未掌握的字优先，
         // 其次复习队列；无则保持当前字（多字闭环生产链路）
         nextCharSelector = {
@@ -71,6 +73,15 @@ class AgentOrchestrator(
     /** Provider 是否失败过（key 未配 / 网络错误）——UI 提示配置问题。 */
     var providerFailed: Boolean = false
         private set
+
+    /** review-09 P1-13：离页取消标记——置位后在途回包不再执行任何工具副作用。 */
+    @Volatile var cancelled: Boolean = false
+        private set
+
+    /** 离页取消（LearnViewModel 调用；同时取消底层 OkHttp Call）。 */
+    fun cancelInFlight() {
+        cancelled = true
+    }
 
     /** 当前学习状态（UI 渲染依据）。 */
     val state: LessonState get() = runner.state
@@ -178,7 +189,9 @@ class AgentOrchestrator(
         // 在 beginAttempt 前确定，score 由本地判定绑定（模型不得改写为假分）
         val intent = forcedIntent
             ?: intentResolver.activeIntent(text)
-            ?: if (runner.state.phase == Phase.RECOGNIZE) {
+            // review-09 P1-9：复习轮语音目标比较也进入认读判定——复习模式 phase 可能不在
+            // RECOGNIZE（startReview 后遗留），但听音作答仍需本地对错真值（正确读出复习字不得判错）
+            ?: if (runner.state.phase == Phase.RECOGNIZE || runner.state.mode == com.literacy.agent.model.Mode.REVIEW) {
                 val target = runner.state.char
                 if (target != null && intentResolver.isRecognitionCorrect(text, target)) {
                     com.literacy.agent.model.VoiceIntent.RECOGNIZED
@@ -266,9 +279,14 @@ class AgentOrchestrator(
             llmTurn(ev)
             return
         }
-        // 每笔对比对应骨架
+        // 每笔对比对应骨架；少于 2 点的短轨迹按失败笔画计入（review-09 P1-12：不虚高——
+        // 此前从平均分剔除，全部短轨迹还直接返回无证据）
         val evals = paths.mapIndexedNotNull { i, path ->
-            if (path.size >= 2 && refs[i].size >= 2) evaluator.evaluate(path, refs[i]) else null
+            when {
+                path.size < 2 -> com.literacy.agent.learning.StrokeEvaluation(0.2, false, issues = listOf("轨迹过短"))
+                refs[i].size >= 2 -> evaluator.evaluate(path, refs[i])
+                else -> null   // 参考数据退化（<2 点）：数据问题非用户失败，跳过
+            }
         }
         if (evals.isEmpty()) return
         val avgScore = evals.map { it.score }.average()
@@ -366,6 +384,8 @@ class AgentOrchestrator(
         private set
 
     private fun llmTurn(event: Event) {
+        // review-09 P1-13：离页取消——在途回包（含 Provider 失败兜底）不再执行工具/推进/落库
+        if (cancelled) return
         val producedBefore = runner.producedEvents.size
         val output = try {
             provider.respond(buildContext(event))
@@ -381,6 +401,9 @@ class AgentOrchestrator(
                 LlmOutput("好的，我们继续。", emptyList())
             }
         }
+        // review-09 W6：在途取消（离页）——Provider 失败兜底同样不得继续执行
+        // （runner.llmTurn/refreshUi 播报/落库都属离页后副作用）
+        if (cancelled) return
         runner.llmTurn(output)
         lastText = runner.lastText
         ttsText = runner.ttsText   // P1-13：SafetyGuard 过滤后的文本（TTS 用）

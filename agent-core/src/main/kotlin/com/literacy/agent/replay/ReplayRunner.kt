@@ -58,6 +58,13 @@ class ReplayRunner(
      */
     var autoAdvance: Boolean = true
 
+    /**
+     * review-09 P1-7：生产严格校验——App 层（AgentOrchestrator）置 true。
+     * 要求 record_result 必须回传 App 签发的幂等键（无真实本地尝试即拒绝模型自造 key/分数）；
+     * 学习轮还要求本地 attempt 非空。用例/mock（宽松）不受影响。
+     */
+    var strictResultValidation: Boolean = false
+
     /** 最近一次 LLM 输出的 text（供 text 语义断言，GT 用例 contains/not_contains）。 */
     var lastText: String? = null
         private set
@@ -260,14 +267,11 @@ class ReplayRunner(
 
     /** 选项判题事件（识主写辅 / 识读优先的 independent_write 通道）。 */
     fun tapped(action: String, correct: Boolean, exerciseId: String): Boolean {
-        // review-09 P1-10：判题事件绑定本地权威结果——本地只权威 score（对错），
-        // 模型不可把判错写成判对；维度由 record_result 的 exercise_type 题型决定（不在
-        // tapped 时猜——action 是按钮语义非题型，GT-034 用 exercise_type=fill_blank/audio_choice）
-        configureState(state.copy(attempt = com.literacy.agent.model.AttemptContext(
-            phase = null,
+        // review-09 P1-8：保留本地绑定的维度/题型——App 层 beginAttempt 已绑定 exerciseType，
+        // 此处只覆盖本地判题分数（不把 dimension/exerciseType 冲回 null，落库时按题型推维度）
+        val prev = state.attempt
+        configureState(state.copy(attempt = (prev ?: com.literacy.agent.model.AttemptContext()).copy(
             score = if (correct) 1.0 else 0.0,
-            dimension = null,
-            exerciseType = null,
         )))
         reviewAnswered = true   // review-09 P1-4：判题证据
         val ev = ButtonTapped(action, correct, exerciseId)
@@ -285,6 +289,8 @@ class ReplayRunner(
     fun startReview(): Boolean {
         if (state.mode == Mode.REVIEW) return false   // review-09 P1-4：复习中禁止再次 start_review（防绕过 NEXT 门禁）
         if (reviewQueue.isEmpty()) return false
+        // review-09 P1-9：按复习字边界清零判题证据（新复习字需重新作答）
+        reviewAnswered = false
         state = state.copy(
             mode = Mode.REVIEW,
             reviewStage = ReviewStage.RECALL,
@@ -685,19 +691,37 @@ class ReplayRunner(
         }
         val score = (result["score"] as? Number)?.toDouble()
         val phase = result["phase"] as? String ?: ""
-        // P1-6：key 必须匹配 App 注入的（真实模式；mock 未注入则宽松）
+        // P1-6 + review-09 P1-7：key 必须匹配 App 注入的幂等键。
+        // 生产（strictResultValidation）：App 未签发 key（无真实本地尝试）即拒绝——
+        // 模型不得在无本地作答的回合自造 key/phase/score；mock/用例未注入则宽松
         val injected = state.idempotencyKey
-        if (injected != null && key != injected) {
+        if (strictResultValidation) {
+            if (injected == null) {
+                rejectedCalls += "record_result"
+                rejectReasons += "record_result: 缺少 App 签发的幂等键（本次尝试无本地证据）"   // P1-3
+                return
+            }
+            if (key != injected) {
+                rejectedCalls += "record_result"
+                rejectReasons += "record_result: key 不匹配 App 签发的幂等键"   // P1-3
+                return
+            }
+        } else if (injected != null && key != injected) {
             rejectedCalls += "record_result"
             rejectReasons += "record_result: key 不匹配 App 签发的幂等键"   // P1-3
             return
         }
-        // P1-6/GT-010 + review-09 P1-16：幂等预检——同 session+同 char+同 phase+同 key 才跳过
-        // （复合唯一索引语义：retry 重发；不同 phase 的同 key 是独立证据，不误跳过）
-        val sid = currentSessionId()
-        if (store.results.any { it.sessionId == sid && it.char == char && it.phase == phase && it.idempotencyKey == key }) return
+        // review-09 P1-7 + P1-10：幂等预检——App 签发 key 全局去重（Room 与核心 Store 语义一致）；
+        // 同 key 换 phase/session/char 不得重复计分（复合键曾允许换 phase 双计）
+        if (store.results.any { it.idempotencyKey == key }) return
         // review-09 P1-7：本地权威结果——attempt 绑定时 score 用本地裁决值、phase 必须匹配
         val attempt = state.attempt
+        // 生产学习轮：无本地尝试证据（attempt 为空）即拒绝（复习轮走下方独立证据门禁）
+        if (strictResultValidation && state.mode != Mode.REVIEW && attempt == null) {
+            rejectedCalls += "record_result"
+            rejectReasons += "record_result: 缺少本地尝试证据（attempt）"   // P1-3
+            return
+        }
         if (attempt != null) {
             if (attempt.phase != null && phase != attempt.phase) {
                 rejectedCalls += "record_result"
@@ -715,6 +739,15 @@ class ReplayRunner(
             if (state.attempt?.score == null && !reviewAnswered) {
                 rejectedCalls += "record_result"
                 rejectReasons += "record_result: 复习轮缺少本地作答证据（attempt.score）"   // review-11 P1-1.3
+                return
+            }
+            // review-09 P1-9：REINFORCE 的 reinforce 落库必须绑定本阶段本地作答证据（attempt.score）——
+            // 旧 ASSESS 判题证据（reviewAnswered）不得被下一阶段借用（补记 assess 仍走 reviewAnswered 容错）。
+            // review-09 W4：门禁仅在 strict 模式生效——生产（App 层 strict=true）要求本阶段证据；
+            // 宽松模式（mock/用例）允许纯讲解（无练习）的 reinforce 落库不被误拒
+            if (strictResultValidation && phase == "reinforce" && state.attempt?.score == null) {
+                rejectedCalls += "record_result"
+                rejectReasons += "record_result: 复习 REINFORCE 缺少本阶段本地作答证据"   // review-09 P1-9
                 return
             }
             val validPhase = when (state.reviewStage) {
@@ -743,9 +776,12 @@ class ReplayRunner(
         val effectiveScore = if (isSkip) null else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
-        // 复习轮也按题型推维度（不再恒最弱——听音选字更新识读而非书写），无题型才兜底最弱（事务内）
+        // review-09 P1-8：题型优先用本地绑定的 attempt.exerciseType（选择题 App 层已绑定，
+        // 模型回传缺失/篡改不得覆盖本地判题语义）；复习轮也按题型推维度（听音选字更新识读而非书写），
+        // 无题型才兜底最弱（事务内）
+        val localExerciseType = attempt?.exerciseType ?: result["exercise_type"] as? String
         val baseDim = attempt?.dimension
-            ?: dimensionForPhase(phase, result["exercise_type"] as? String)
+            ?: dimensionForPhase(phase, localExerciseType)
         val promptLevelStr = result["prompt_level"]?.toString()   // 兼容 YAML 数字与字符串
         // review-09 P1-15：裁决+排期全在事务内基于最新记录重算（并发 lost update 修复）；
         // 幂等预检保留作快路径，事务内 UNIQUE 索引兜底（同 key 并发 → insertResult=-1 → finalRecord=null）
@@ -756,7 +792,7 @@ class ReplayRunner(
                 sessionId = currentSessionId(),
                 char = char,
                 phase = phase,
-                exerciseType = result["exercise_type"] as? String,
+                exerciseType = localExerciseType,   // review-09 P1-8：本地题型优先（模型回传缺失/篡改不覆盖）
                 score = effectiveScore,   // review-10 P1-1：落库统一用本地权威值（模型不可写假分）
                 promptLevel = promptLevelStr ?: (state.promptLevel.toString()),
                 idempotencyKey = key,
@@ -766,9 +802,11 @@ class ReplayRunner(
             rec,
         ) { latest ->
             val dim = baseDim ?: if (state.mode == Mode.REVIEW) weakestDimension(latest) else null
-            val adjudicated = if (dim != null && !isSkip) {
+            val adjudicated = if (dim != null && !isSkip && phase != "guided_write") {
                 // review-11 P1-1.2：裁决用本地绑定的提示等级（attempt.promptLevel 兜底 state.promptLevel）——
                 // 模型 prompt_level 字段仅用于落库展示（缺失/有提示尝试不再被误判为 L0 无提示掌握）
+                // review-09 P1-12：guided_write（跟写）是教学流程，不提升硬掌握度——
+                // 仅 independent_write 是硬性检测点（MASTERY-CRITERIA §4）
                 val localLevel = attempt?.promptLevel ?: state.promptLevel
                 adjudicator.adjudicate(latest, dim, ok, localLevel, isReview = state.mode == Mode.REVIEW)
             } else latest

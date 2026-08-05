@@ -181,6 +181,11 @@ data class CharacterRecord(
     val streakUnderstandErrors: Int = 0,
     val streakApplySuccess: Int = 0,
     val streakApplyErrors: Int = 0,
+    // review-09 P1-11：达标链计数持久化（L3→L4 需 3 次间隔复习，跨天/重启不清零）
+    val gateStreakRecognize: Int = 0,
+    val gateStreakWrite: Int = 0,
+    val gateStreakUnderstand: Int = 0,
+    val gateStreakApply: Int = 0,
     val commonMistakes: List<String> = emptyList(),
     val source: String? = null,
     // SM-2 参数（按最弱维度计算，MASTERY-CRITERIA §5）
@@ -227,15 +232,32 @@ data class CharacterRecord(
         Dimension.APPLY -> copy(streakApplySuccess = success, streakApplyErrors = errors)
     }
 
+    /** 达标链计数（review-09 P1-11：MasteryAdjudicator 升级判定用，随记录持久化）。 */
+    fun gateStreak(dim: Dimension): Int = when (dim) {
+        Dimension.RECOGNIZE -> gateStreakRecognize
+        Dimension.WRITE -> gateStreakWrite
+        Dimension.UNDERSTAND -> gateStreakUnderstand
+        Dimension.APPLY -> gateStreakApply
+    }
+
+    /** 达标链计数写入。 */
+    fun withGateStreak(dim: Dimension, n: Int): CharacterRecord = when (dim) {
+        Dimension.RECOGNIZE -> copy(gateStreakRecognize = n)
+        Dimension.WRITE -> copy(gateStreakWrite = n)
+        Dimension.UNDERSTAND -> copy(gateStreakUnderstand = n)
+        Dimension.APPLY -> copy(gateStreakApply = n)
+    }
+
     /** 任一维度存在连续失败计数（复习队列"最近出错"判定，SESSION-LIFECYCLE §1.2）。 */
     fun anyErrorStreak(): Boolean = Dimension.entries.any { streakErrors(it) > 0 }
 
-    /** 整体状态推导（MASTERY-CRITERIA §3 简化） */
+    /** 整体状态推导（MASTERY-CRITERIA §3 简化）
+     *  review-09 P1-14：reviewing 识别+书写都 ≥2、mastered 识别+书写都 ≥3（对齐 MASTERY-CRITERIA） */
     fun deriveStatus(): String = when {
         masteryRecognize == 0 && masteryWrite == 0 && masteryUnderstand == 0 && masteryApply == 0 -> "new"
         masteryRecognize >= 4 && masteryWrite >= 4 && masteryUnderstand >= 4 && masteryApply >= 4 -> "fully_mastered"   // P2
-        masteryRecognize >= 3 && masteryWrite >= 2 && masteryUnderstand >= 2 -> "mastered"
-        masteryRecognize >= 2 && masteryWrite >= 1 -> "reviewing"
+        masteryRecognize >= 3 && masteryWrite >= 3 && masteryUnderstand >= 2 -> "mastered"
+        masteryRecognize >= 2 && masteryWrite >= 2 -> "reviewing"
         else -> "learning"
     }
 }

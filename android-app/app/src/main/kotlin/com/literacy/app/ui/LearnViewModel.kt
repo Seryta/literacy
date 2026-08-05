@@ -49,9 +49,11 @@ class LearnViewModel(
     provider: com.literacy.agent.provider.LlmProvider? = null,   // 测试注入（Compose UI 测试用 ScriptedLlmProvider 驱动阶段）
 ) : ViewModel() {
 
+    // review-09 P1-13：持有传输层引用——离页取消在途 OkHttp Call（Job.cancel 不够，同步 execute 需 cancel Call）
+    private val httpTransport = OkHttpTransport()
     private val orchestrator = AgentOrchestrator(
         provider = provider ?: HttpLlmProvider(
-            OkHttpTransport(),
+            httpTransport,
             HttpLlmProvider.ProviderConfig(
                 baseUrl = settings.baseUrl,
                 apiKey = settings.apiKey,
@@ -92,6 +94,9 @@ class LearnViewModel(
     }
 
     override fun onCleared() {
+        // review-09 P1-13：VM 销毁同样取消在途请求（Activity 级 VM 可能不随 composable 销毁）
+        orchestrator.cancelInFlight()
+        httpTransport.cancelActive()
         releaseTts()
         super.onCleared()
     }
@@ -131,8 +136,11 @@ class LearnViewModel(
         }
     }
 
-    /** review-10 P1-11：离页取消在途请求（网络调用最长 120s，不残留后台执行副作用）。 */
+    /** review-10 P1-11：离页取消在途请求（网络调用最长 120s，不残留后台执行副作用）。
+     *  review-09 P1-13：同时取消底层 OkHttp Call（Job.cancel 不中断同步 execute）。 */
     fun cancelInFlight() {
+        orchestrator.cancelInFlight()
+        httpTransport.cancelActive()
         currentJob?.cancel()
         currentJob = null
     }
@@ -171,12 +179,14 @@ class LearnViewModel(
     /** 用户文字输入（第一版以文本框模拟语音；STT 接入后替换）。 */
     fun onUserInput(text: String) {
         if (ui.sessionEnded) return   // review-09 P1-12：session 结束后禁止再触发
+        userInteracted()
         submit { orchestrator.userSpoke(text) }
     }
 
     /** 开发模式模拟认读（绕过中文输入限制；仅 debug 构建 UI 显示）。 */
     fun onSimulatedRecognition(correct: Boolean) {
         if (ui.sessionEnded) return   // review-09 P1-12
+        userInteracted()
         val char = orchestrator.state.char ?: return
         val intent = if (correct) com.literacy.agent.model.VoiceIntent.RECOGNIZED else com.literacy.agent.model.VoiceIntent.WRONG
         submit { orchestrator.userSpoke(char, intent) }
@@ -184,6 +194,7 @@ class LearnViewModel(
 
     /** 书写完成（米字格手势轨迹）。stroke 为当前笔序号（1-based）。 */
     fun onStrokeDrawn(path: List<Pair<Float, Float>>) {
+        userInteracted()
         val pts = path.map { com.literacy.agent.model.StrokePoint(it.first, it.second) }
         if (orchestrator.state.phase == Phase.GUIDED_WRITE) {
             // P1-1：笔序 = 已完成笔画数 + 1（此前误传 promptLevel）
@@ -197,6 +208,7 @@ class LearnViewModel(
      *  P1-7：缺笔（strokeCount < 参考笔画数）由 completeIndependentWrite 判失败。 */
     fun onCompleteWriting(paths: List<List<Pair<Float, Float>>>) {
         if (paths.isEmpty()) return
+        userInteracted()
         submit {
             val pts = paths.map { s -> s.map { com.literacy.agent.model.StrokePoint(it.first, it.second) } }
             orchestrator.completeIndependentWrite(pts)
@@ -204,6 +216,7 @@ class LearnViewModel(
     }
 
     fun onButton(action: String) {
+        userInteracted()
         if (action == "pause") {
             // review-10 P1-11：暂停本地立即执行（无网络调用）——在途回包副作用由
             // ReplayRunner 的 paused 检查拦截（P1-12 已实现）
@@ -267,8 +280,40 @@ class LearnViewModel(
         // P1-13：TTS 用过滤后的文本（越界内容过滤后再朗读，见 AgentOrchestrator.ttsText）
         // review-09 P2-5：sessionEnded 也朗读（结束话术是最后教学输出——此前被 !sessionEnded 永远跳过）
         val text = orchestrator.ttsText ?: ui.text
-        if (text.isNotBlank() && ttsReady) {
+        if (text.isNotBlank()) {
+            // review-09 P2-4：教学 TTS 优先离线女声（与首页/引导一致），系统 TTS 兜底
+            if (com.literacy.app.ui.voice.VoiceHub.offlineTtsReady) {
+                // review-09 W3：VITS generate 是同步 CPU 重操作（长文本可卡主线程 1s+）→
+                // 后台线程生成+播放；完成后切回主线程回调（onTtsCompleted 改 runner 状态）
+                viewModelScope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        try { com.literacy.app.ui.voice.VoiceHub.offline.speak(text) }
+                        catch (e: Exception) { false }
+                    }
+                    if (ok) {
+                        // 离线播放即视为教学语已播（App 端持续自动听，开麦时机近似即可）
+                        orchestrator.onTtsCompleted()
+                    } else {
+                        speakSystem(text)   // 离线生成/播放失败 → 系统 TTS 兜底
+                    }
+                }
+                return
+            }
+            speakSystem(text)
+        }
+    }
+
+    /** 系统 TTS 兜底（离线不可用/生成失败时）。 */
+    private fun speakSystem(text: String) {
+        if (ttsReady) {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "teaching")
         }
+    }
+
+    /** review-09 P2-3：用户交互（按钮/手写/输入）重置全局沉默提示计时（VoiceFlowCoordinator）。 */
+    var onUserInteraction: (() -> Unit)? = null
+
+    private fun userInteracted() {
+        onUserInteraction?.invoke()
     }
 }

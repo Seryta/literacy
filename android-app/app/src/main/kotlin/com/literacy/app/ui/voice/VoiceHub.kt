@@ -32,6 +32,10 @@ object VoiceHub {
             try {
                 if (modelManager.ttsReady()) offline.initTts()
                 if (modelManager.sttReady()) offline.initStt()
+            } catch (e: Exception) {
+                // review-09 P1-06：初始化异常必须收敛在线程内——文件 IO/校验失败
+                // 不得逃逸为未捕获异常杀进程（重操作已在后台线程执行）
+                android.util.Log.w("VoiceHub", "离线引擎初始化失败", e)
             } finally {
                 initInProgress = false
             }

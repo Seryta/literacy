@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 /** App 学习数据库（characters/sessions/session_character_results/name_plan）。 */
 @Database(
     entities = [CharacterEntity::class, SessionEntity::class, SessionResultEntity::class, NamePlanEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,   // androidTest 迁移测试需要 schema JSON（app/schemas）
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -54,6 +54,29 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP INDEX IF EXISTS `index_session_character_results_idempotencyKey`")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_session_character_results_sessionId_char_phase_idempotencyKey` " +
                     "ON session_character_results (sessionId, char, phase, idempotencyKey)")
+            }
+        }
+
+        /** v4→v5（review-09 P1-10 + P1-11）：
+         *  1) 幂等语义统一——复合唯一索引（sessionId+char+phase+key）替换为 idempotencyKey 全局唯一：
+         *     App 签发 key 全局去重（同 key 换 phase 不得重复计分，Room 与核心 Store 语义一致）。
+         *     迁移前按 key 去重保留最早一行（防 CREATE UNIQUE INDEX 抛约束异常；幂等语义下重复行
+         *     本就是同事件 retry 漏网，去重不丢独立证据）。
+         *  2) characters 增加 gateStreak 四列（达标链持久化——L3→L4 三次间隔复习跨天/重启不丢）。 */
+        internal val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "DELETE FROM session_character_results WHERE id NOT IN " +
+                        "(SELECT MIN(id) FROM session_character_results GROUP BY idempotencyKey) " +
+                        "AND idempotencyKey IS NOT NULL",   // review-09 S1：NULL 折叠风险——IS NOT NULL 限缩去重范围
+                )
+                db.execSQL("DROP INDEX IF EXISTS `index_session_character_results_sessionId_char_phase_idempotencyKey`")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_session_character_results_idempotencyKey` " +
+                    "ON session_character_results (idempotencyKey)")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakRecognize INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakWrite INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakUnderstand INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakApply INTEGER NOT NULL DEFAULT 0")
             }
         }
 
@@ -104,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "literacy.db",
                 )
                     // P1-5：v1→v2 加 idempotency_key 唯一索引——真实 migration（不清数据）
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { instance = it }
             }
     }

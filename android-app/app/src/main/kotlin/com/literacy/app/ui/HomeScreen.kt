@@ -316,10 +316,20 @@ fun HomeScreen(
                                 scope.launch {
                                     dlError = null
                                     try {
-                                        if (!modelManager.ttsReady()) modelManager.downloadTts { dlProgress = it / 2 }
-                                        if (!modelManager.sttReady()) modelManager.downloadStt { dlProgress = 50 + it / 2 }
-                                        com.literacy.app.ui.voice.VoiceHub.offline.initTts()
-                                        com.literacy.app.ui.voice.VoiceHub.offline.initStt()
+                                        if (!modelManager.ttsReady()) {
+                                            val ok = modelManager.downloadTts { dlProgress = it / 2 }
+                                            // review-09 P1-05：下载完成但校验仍失败 → 提示重试（不得静默跳过）
+                                            if (!ok) throw RuntimeException("语音包校验失败")
+                                        }
+                                        if (!modelManager.sttReady()) {
+                                            val ok = modelManager.downloadStt { dlProgress = 50 + it / 2 }
+                                            if (!ok) throw RuntimeException("语音包校验失败")
+                                        }
+                                        // review-09 W2：ONNX 加载 1-5s，不得在主线程执行（ANR 风险）→ 后台线程
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            com.literacy.app.ui.voice.VoiceHub.offline.initTts()
+                                            com.literacy.app.ui.voice.VoiceHub.offline.initStt()
+                                        }
                                         dlDone = true
                                     } catch (e: Exception) {
                                         dlError = "请检查网络后重试"

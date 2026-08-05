@@ -1,5 +1,6 @@
 package com.literacy.app.ui.voice
 
+import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -108,15 +109,21 @@ class OfflineVoiceEngine(
     // ── STT（流式 zipformer 中文识别）─────────────────────────────
     private var recognizer: OnlineRecognizer? = null
     private var record: AudioRecord? = null
-    private var listening = false
-    private var cancelled = false
-    private var autoRestart = false
-    private var onResult: ((String) -> Unit)? = null
+    // review-09 P1-04：跨线程状态 @Volatile 同步（主线程写，采集线程读）
+    @Volatile private var listening = false
+    @Volatile private var cancelled = false
+    @Volatile private var autoRestart = false
+    @Volatile private var onResult: ((String) -> Unit)? = null
     @Volatile private var listenThread: Thread? = null   // 采集线程（start 前 join 旧线程，避免并发操作 recognizer 崩溃）
 
     fun initStt() {
         val dir = modelManager.sttDir
         if (!modelManager.sttReady()) return
+        // review-09 P1-03：重新初始化前停旧监听 + 释放旧 recognizer（native 资源，v1.13.4 有 release）
+        cancelListening()
+        listenThread?.let { old ->
+            try { old.join(2000) } catch (e: InterruptedException) {}
+        }
         try {
             val encoder = File(dir, "encoder-epoch-99-avg-1.onnx").absolutePath
             val decoder = File(dir, "decoder-epoch-99-avg-1.onnx").absolutePath
@@ -134,12 +141,16 @@ class OfflineVoiceEngine(
                 tokens = tokensFile,
                 numThreads = 2,
             )
-            // OnlineRecognizer：标准流式（isReady 控制 decode 节奏，特征维度 80）
+            // review-09 P1-03：旧 recognizer 释放后再重建（避免 native 泄漏）
+            recognizer?.release()
+            // OnlineRecognizer：标准流式（isReady 控制 decode 节奏，特征维度 80）。
+            // review-09 P2-1：enableEndpoint=false——代码不调用 isEndpoint/reset，
+            // 端点检测由本类静音逻辑（RMS + 文本增量）承担，避免配置与行为不一致
             recognizer = OnlineRecognizer(
                 config = OnlineRecognizerConfig(
                     featConfig = FeatureConfig(featureDim = 80),
                     modelConfig = modelConfig,
-                    enableEndpoint = true,
+                    enableEndpoint = false,
                 ),
             )
             Log.i(tag, "离线 STT 就绪（流式中文，OnlineRecognizer）")
@@ -151,7 +162,9 @@ class OfflineVoiceEngine(
 
     val sttAvailable: Boolean get() = recognizer != null
 
-    /** 开始持续监听（语音段检测：静音 0.8s = 一句话完 → 回调结果；autoRestart 则继续听）。 */
+    /** 开始持续监听（语音段检测：静音 0.8s = 一句话完 → 回调结果；autoRestart 则继续听）。
+     *  review-09 P2-5：录音权限由调用方统一申请（MainActivity/Onboarding），此处静态标注豁免 lint。 */
+    @SuppressLint("MissingPermission")
     fun startListening(
         onResultText: (String) -> Unit,
         onPartial: (String) -> Unit = {},
@@ -202,59 +215,98 @@ class OfflineVoiceEngine(
                 if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) return@Thread
                 while (listening && !cancelled) {
                     val stream: OnlineStream = engine.createStream()
-                    Log.d(tag, "createStream 成功，开始采集")
-                    var fullText = ""
-                    var silentMs = 0L
-                    var lastPartial = ""
-                    val shortBuf = ShortArray(minBuf / 2)
-                    // 累积音频到流式 chunk 再解码（zipformer 需约 39 特征帧≈390ms；
-                    // 每 read 小段就 decode 会报输入帧数不足）
-                    val chunkSamples = 8000   // 0.5s @16kHz
-                    val accum = java.util.ArrayList<Short>(chunkSamples)
-                    // 一句话的识别循环：采集 → 累积 → 解码 → 静音检测结束
-                    while (listening && !cancelled) {
-                        val n = recorder.read(shortBuf, 0, shortBuf.size)
-                        if (n <= 0) continue
-                        // 静音检测（RMS）：阈值调低（真机轻声也能触发）；有识别文本即视为正在说话
-                        var rms = 0f
-                        for (i in 0 until n) rms += shortBuf[i] * shortBuf[i]
-                        rms = kotlin.math.sqrt(rms / n)
-                        if (rms < 80f) {   // 静音阈值（低：避免轻声说话被当静音）
-                            silentMs += n * 1000L / sampleRate
-                            if (silentMs > 800L) break   // 静音 0.8s → 一句话结束
-                        } else {
-                            silentMs = 0L
-                        }
-                        // 累积到 chunk（约 0.5s），标准流式：acceptWaveform 后 isReady 则 decode
-                        for (i in 0 until n) accum.add(shortBuf[i])
-                        if (accum.size >= chunkSamples) {
-                            val floatBuf = FloatArray(accum.size)
-                            for (i in accum.indices) floatBuf[i] = accum[i] / 32767f
-                            stream.acceptWaveform(floatBuf, sampleRate)
-                            accum.clear()
-                            while (engine.isReady(stream)) engine.decode(stream)
-                            val text = engine.getResult(stream).text
-                            if (text.isNotBlank()) {
-                                silentMs = 0L   // 有识别文本视为正在说话（停顿不截断）
-                                if (text != lastPartial) {
+                    try {
+                        Log.d(tag, "createStream 成功，开始采集")
+                        var fullText = ""
+                        var silentMs = 0L
+                        var silentRun = 0   // review-09 W1：连续静音帧计数（消抖）
+                        var lastPartial = ""
+                        val shortBuf = ShortArray(minBuf / 2)
+                        // 累积音频到流式 chunk 再解码（zipformer 需约 39 特征帧≈390ms；
+                        // 每 read 小段就 decode 会报输入帧数不足）
+                        val chunkSamples = 8000   // 0.5s @16kHz
+                        val accum = java.util.ArrayList<Short>(chunkSamples)
+                        // 一句话的识别循环：采集 → 累积 → 解码 → 静音检测结束
+                        while (listening && !cancelled) {
+                            val n = recorder.read(shortBuf, 0, shortBuf.size)
+                            if (n <= 0) continue
+                            // 静音检测（RMS）：阈值调低（真机轻声也能触发）；语音活动即重置
+                            var rms = 0f
+                            for (i in 0 until n) rms += shortBuf[i] * shortBuf[i]
+                            rms = kotlin.math.sqrt(rms / n)
+                            if (rms < 80f) {   // 静音阈值（低：避免轻声说话被当静音）
+                                // review-09 W1：连续静音帧消抖——单帧/偶发噪声（爆音、环境音）
+                                // 不累计静音；连续 5 帧（≈40ms）静音才计入，避免停顿前
+                                // 一两帧噪声打断语音段
+                                silentRun++
+                                if (silentRun >= 5) {
+                                    silentMs += n * 1000L / sampleRate
+                                    // review-09 P1-01 + W1：已有文本 → 700ms 静音即结束
+                                    // （老人慢语速停顿 500-800ms 常见，500ms 会把一句切两段）；
+                                    // 无文本（等待开口）→ 长静音 900ms
+                                    val limit = if (fullText.isNotBlank()) 700L else 900L
+                                    if (silentMs > limit) break   // 一句话结束
+                                }
+                            } else {
+                                silentRun = 0   // 有语音活动（非静音）重置（含消抖计数）
+                                silentMs = 0L
+                            }
+                            // 累积到 chunk（约 0.5s），标准流式：acceptWaveform 后 isReady 则 decode
+                            for (i in 0 until n) accum.add(shortBuf[i])
+                            if (accum.size >= chunkSamples) {
+                                val floatBuf = FloatArray(accum.size)
+                                for (i in accum.indices) floatBuf[i] = accum[i] / 32767f
+                                stream.acceptWaveform(floatBuf, sampleRate)
+                                accum.clear()
+                                while (engine.isReady(stream)) engine.decode(stream)
+                                val text = engine.getResult(stream).text
+                                // review-09 P1-01：只在文本有增量（新文本）时重置静音——
+                                // 在线结果保留旧文本时重复文本不重置，保证“说完→静音”能结束
+                                if (text.isNotBlank() && text != lastPartial) {
                                     lastPartial = text
                                     fullText = text
+                                    silentMs = 0L   // 新文本视为正在说话（停顿不截断）
                                     val t = text
                                     Log.d(tag, "实时转写: $t")
                                     mainHandler.post { onPartial(t) }   // 实时字幕
                                 }
                             }
                         }
+                        // review-09 P1-04（C1）：取消后不再做尾解码——退后台 ON_PAUSE →
+                        // speech.cancel → cancelListening 只停麦，采集线程仍可能走到这里
+                        // （inputFinished/decode 耗时窗口），跳过避免在途结果被投递
+                        if (cancelled) return@Thread
+                        // review-09 P1-02：退出内层循环后提交尾部剩余样本 + inputFinished +
+                        // 最终 decode + getResult——尾音/末字不丢（此前不足 0.5s 的尾部直接丢弃）
+                        if (accum.isNotEmpty()) {
+                            val floatBuf = FloatArray(accum.size)
+                            for (i in accum.indices) floatBuf[i] = accum[i] / 32767f
+                            stream.acceptWaveform(floatBuf, sampleRate)
+                            accum.clear()
+                        }
+                        stream.inputFinished()
+                        while (engine.isReady(stream)) engine.decode(stream)
+                        val finalText = engine.getResult(stream).text
+                        // review-09 P1-04（C1）：解码完成后再检查一次——取消可能发生在
+                        // 尾解码期间；不得把结果投递给 onResult（触发在途 LLM 调用/工具写库）
+                        if (cancelled) return@Thread
+                        // 一句话结束：回调最终结果（尾音解码后的文本优先）
+                        if (finalText.isNotBlank()) {
+                            val t = finalText
+                            Log.d(tag, "识别结果: $t")
+                            mainHandler.post { onResult?.invoke(t) }
+                        } else if (fullText.isNotBlank()) {
+                            val t = fullText
+                            Log.d(tag, "识别结果: $t")
+                            mainHandler.post { onResult?.invoke(t) }
+                        } else {
+                            Log.d(tag, "识别超时/无结果（静音）")
+                        }
+                        if (!autoRestart) break   // 不自动重听则结束
+                    } finally {
+                        // review-09 P1-03：stream 必须显式释放（v1.13.4 有 release，之前注释说没有是错的）
+                        try { stream.release() } catch (e: Exception) {}
                     }
-                    // 一句话结束：回调结果
-                    if (fullText.isNotBlank()) {
-                        val t = fullText
-                        Log.d(tag, "识别结果: $t")
-                        mainHandler.post { onResult?.invoke(t) }
-                    } else {
-                        Log.d(tag, "识别超时/无结果（静音）")
-                    }
-                    if (!autoRestart) break   // 不自动重听则结束
                 }
             } catch (e: Exception) {
                 Log.w(tag, "离线 STT 监听异常", e)
@@ -276,7 +328,10 @@ class OfflineVoiceEngine(
 
     fun destroy() {
         cancelListening()
+        listenThread?.let { old ->
+            try { old.join(2000) } catch (e: InterruptedException) {}
+        }
         stop()
-        // 引擎实例不可复用后释放（sherpa-onnx 无显式 close 的 Java API 版本）
+        // 引擎实例是 VoiceHub 单例（旋转/重建不释放，重新初始化由 initStt 先 release 旧实例）
     }
 }

@@ -304,7 +304,7 @@ class ReplayRunnerTest {
         assertEquals(LearningPath.READ_ONLY, runner.state.learningPath)
     }
 
-    // ---- review-11 P1-4.1：show_sentence 校验 sentence_text ----
+    // ---- show_sentence 校验 sentence_text ----
 
     @Test
     fun `show_sentence 合法调用（sentence_text 参数）不被拒绝`() {
@@ -314,5 +314,90 @@ class ReplayRunnerTest {
         )))))
         assertFalse(runner.rejectedCalls.contains("show_sentence"), "sentence_text 是 canonical 参数，不应拒绝")
         assertTrue(runner.executedToolCalls.contains("show_sentence"))
+    }
+
+    // ---- review-09 W7：strict 生产路径（strictResultValidation=true，P1-7）----
+
+    private fun llmRecordResult(runner: ReplayRunner, key: String, phase: String = "recognize") =
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to phase, "score" to 1.0, "prompt_level" to "none", "idempotency_key" to key),
+        )))))
+
+    @Test
+    fun `strict 模式无 App 签发幂等键拒绝模型自造 key（P1-7 生产路径）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true
+        llmRecordResult(runner, "self-made-key")   // 无真实本地尝试，模型自造 key
+        assertTrue(runner.rejectedCalls.contains("record_result"), "strict 下无 App 签发 key 必须拒绝（模型不得自造 key 改掌握度）")
+        assertEquals(0, runner.store.results.size)
+        assertTrue(runner.rejectReasons.any { it.contains("幂等键") })
+    }
+
+    @Test
+    fun `strict 模式 key 不匹配 App 签发幂等键被拒`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true
+        runner.configureState(runner.state.copy(idempotencyKey = "app-key-1"))
+        llmRecordResult(runner, "different-key")
+        assertTrue(runner.rejectedCalls.contains("record_result"), "key 必须逐字回传 App 签发值")
+        assertEquals(0, runner.store.results.size)
+    }
+
+    @Test
+    fun `strict 模式学习轮缺少本地尝试证据（attempt）被拒`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true
+        // 有 App 签发 key，但无本地事件绑定 attempt（模型在无作答回合直接落库）
+        runner.configureState(runner.state.copy(idempotencyKey = "app-key-1", attempt = null))
+        llmRecordResult(runner, "app-key-1")
+        assertTrue(runner.rejectedCalls.contains("record_result"), "strict 下学习轮必须有本地尝试证据")
+        assertEquals(0, runner.store.results.size)
+    }
+
+    @Test
+    fun `strict 模式有 key 有本地 attempt 落库成功（生产正路径）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true
+        runner.configureState(runner.state.copy(
+            idempotencyKey = "app-key-1",
+            attempt = com.literacy.agent.model.AttemptContext(phase = "recognize", score = 1.0, dimension = com.literacy.agent.model.Dimension.RECOGNIZE, promptLevel = 0),
+        ))
+        llmRecordResult(runner, "app-key-1")
+        assertFalse(runner.rejectedCalls.contains("record_result"))
+        assertEquals(1, runner.store.results.size)
+    }
+
+    @Test
+    fun `strict 模式复习 REINFORCE 无本阶段作答证据被拒（P1-9）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("fill_blank", correct = true, exerciseId = "e1")   // 判题证据（reviewAnswered）
+        runner.advanceReview()   // assess → reinforce（advanceReview 不开新 attempt；App 层 beginAttempt 置 null）
+        runner.configureState(runner.state.copy(attempt = null, idempotencyKey = "rev-key-1"))
+        // 模型在 REINFORCE 落 reinforce——旧 ASSESS 判题证据不得被下一阶段借用（P1-9）
+        llmRecordResult(runner, "rev-key-1", phase = "reinforce")
+        assertTrue(runner.rejectedCalls.contains("record_result"), "strict 下 reinforce 必须绑定本阶段作答证据")
+        assertEquals(0, runner.store.results.size)
+    }
+
+    @Test
+    fun `宽松模式复习 REINFORCE 无本阶段证据可落库（W4：纯讲解 reinforce 不被误拒）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = false   // mock/用例宽松模式
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("fill_blank", correct = true, exerciseId = "e1")   // 判题证据（reviewAnswered 放行首道门禁）
+        runner.advanceReview()   // assess → reinforce
+        runner.configureState(runner.state.copy(attempt = null, idempotencyKey = "rev-key-1"))
+        // 纯讲解（无本阶段练习）的 reinforce 落库：宽松模式不得被 P1-9 门禁误拒
+        llmRecordResult(runner, "rev-key-1", phase = "reinforce")
+        assertFalse(runner.rejectedCalls.contains("record_result"), "W4：宽松模式 reinforce 无本阶段证据应放行")
+        assertEquals(1, runner.store.results.size)
+        assertEquals("reinforce", runner.store.results.single().phase)
     }
 }

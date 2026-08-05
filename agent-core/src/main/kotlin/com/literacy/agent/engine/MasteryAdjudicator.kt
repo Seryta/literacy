@@ -12,7 +12,7 @@ import com.literacy.agent.model.Dimension
 class MasteryAdjudicator {
 
     /**
-     * review-11 P1-6：达标链计数（内存态，按 字+维度）。
+     * review-11 P1-6 + review-09 P1-11：达标链计数（按 字+维度，随 CharacterRecord 持久化）。
      *
      * 语义：streak 字段仍累计所有成功（GT-021：L3 认对也计入 streak_success），但升级判定
      * 只统计「自上次门槛升级以来、且本次尝试达标（符合当前升级门槛）的连续成功」——
@@ -24,8 +24,10 @@ class MasteryAdjudicator {
      * - current==2：promptLevel<=0（L0 无提示独立成功）
      * - current==3：isReview（间隔复习）
      * 非达标成功/失败都打断达标链。门槛升级后清零（自上次门槛升级以来语义）。
+     *
+     * review-09 P1-11：计数存在 CharacterRecord.gateStreak* 字段（随 store 落库）——
+     * 跨天/重启不清零（L3→L4 需三次间隔复习，实例内 map 重启即丢）。
      */
-    private val gateStreak = mutableMapOf<Pair<String, Dimension>, Int>()
 
     /** 本次尝试是否达标当前升级门槛（P1-6）。 */
     private fun qualifies(current: Int, promptLevel: Int, isReview: Boolean): Boolean = when {
@@ -57,23 +59,17 @@ class MasteryAdjudicator {
         isReview: Boolean = false,
     ): CharacterRecord {
         val current = record.mastery(dim)
-        val key = record.char to dim
         // P1-17：连续计数累计所有成功（该维度一个递增、另一个清零——不污染其他维度）。
-        // review-11 P1-6：达标链独立累计——达标成功 +1、非达标成功/失败打断（跨门槛借用修复）；
-        // 全部成功仍计入 streak 字段（GT-021：L3 认对 streak_success=1）
+        // review-11 P1-6 + review-09 P1-11：达标链独立累计（存 record.gateStreak*，持久化）——
+        // 达标成功 +1、非达标成功/失败归 0（跨门槛借用修复）；全部成功仍计入 streak 字段
         val withStreak = if (ok) {
             record.withStreak(dim, record.streakSuccess(dim) + 1, 0)
         } else {
             record.withStreak(dim, 0, record.streakErrors(dim) + 1)
         }
         val gate = if (ok && qualifies(current, promptLevel, isReview)) {
-            val next = (gateStreak[key] ?: 0) + 1
-            gateStreak[key] = next
-            next
-        } else {
-            gateStreak.remove(key)
-            0
-        }
+            record.gateStreak(dim) + 1
+        } else 0
 
         val next = when {
             ok -> upgrade(withStreak, gate, dim, current, promptLevel, isReview)
@@ -88,9 +84,10 @@ class MasteryAdjudicator {
         // 它是起步不是门槛达标，清零会破坏"两次 L1 升初步掌握"的连续计数
         val singleLevel = singleAttemptLevel(dim, promptLevel)
         val final = if (next > current && next > singleLevel) {
-            gateStreak.remove(key)   // P1-6：门槛升级后达标链清零（自上次门槛升级以来语义）
-            updated.withStreak(dim, 0, 0)
-        } else updated
+            updated.withGateStreak(dim, 0).withStreak(dim, 0, 0)   // 门槛升级后达标链清零
+        } else {
+            updated.withGateStreak(dim, gate)   // 达标链随记录保存（持久化）
+        }
         return final.copy(status = final.deriveStatus())
     }
 

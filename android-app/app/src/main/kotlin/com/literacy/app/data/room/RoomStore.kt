@@ -108,6 +108,8 @@ class RoomStore(private val db: AppDatabase) : LearningStore {
         streakWriteSuccess = streakWriteSuccess, streakWriteErrors = streakWriteErrors,
         streakUnderstandSuccess = streakUnderstandSuccess, streakUnderstandErrors = streakUnderstandErrors,
         streakApplySuccess = streakApplySuccess, streakApplyErrors = streakApplyErrors,
+        gateStreakRecognize = gateStreakRecognize, gateStreakWrite = gateStreakWrite,
+        gateStreakUnderstand = gateStreakUnderstand, gateStreakApply = gateStreakApply,
         commonMistakes = JSONArray(commonMistakes).toString(),
         source = source, easeFactor = easeFactor, intervalDays = intervalDays,
         lastReview = lastReview, nextReview = nextReview,
@@ -121,6 +123,8 @@ class RoomStore(private val db: AppDatabase) : LearningStore {
         streakWriteSuccess = streakWriteSuccess, streakWriteErrors = streakWriteErrors,
         streakUnderstandSuccess = streakUnderstandSuccess, streakUnderstandErrors = streakUnderstandErrors,
         streakApplySuccess = streakApplySuccess, streakApplyErrors = streakApplyErrors,
+        gateStreakRecognize = gateStreakRecognize, gateStreakWrite = gateStreakWrite,
+        gateStreakUnderstand = gateStreakUnderstand, gateStreakApply = gateStreakApply,
         commonMistakes = if (commonMistakes.isBlank()) emptyList()
         else runCatching { JSONArray(commonMistakes).let { arr -> (0 until arr.length()).map { arr.getString(it) } } }
             .getOrDefault(emptyList()),

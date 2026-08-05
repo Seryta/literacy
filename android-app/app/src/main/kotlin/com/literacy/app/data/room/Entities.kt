@@ -23,6 +23,11 @@ data class CharacterEntity(
     val streakUnderstandErrors: Int = 0,
     val streakApplySuccess: Int = 0,
     val streakApplyErrors: Int = 0,
+    // review-09 P1-11：达标链计数（MasteryAdjudicator 升级判定用，随记录持久化——跨天/重启不丢）
+    val gateStreakRecognize: Int = 0,
+    val gateStreakWrite: Int = 0,
+    val gateStreakUnderstand: Int = 0,
+    val gateStreakApply: Int = 0,
     val commonMistakes: String = "",   // JSON 数组
     val source: String? = null,
     val easeFactor: Double = 2.5,
@@ -48,12 +53,11 @@ data class SessionEntity(
 )
 
 /** session_character_results 表（证据记录，幂等唯一约束——P1-1：IGNORE 依赖真实冲突）。
- *  review-09 P1-16：唯一索引为「同 session+同字+同 phase+同 key」复合——同一尝试的
- *  retry 重发才冲突；不同 phase/session/char 的同 key 是独立证据（v1 模型自造 key
- *  时代，全局 key 唯一索引会误删不同 phase 的独立证据）。App 签名 UUID 下仍全局唯一。 */
+ *  review-09 P1-10：唯一索引为「idempotencyKey 全局唯一」——App 签发 key 全局去重
+ *  （同 key 换 phase/session/char 不得重复计分；Room 与核心 Store 语义一致）。 */
 @Entity(
     tableName = "session_character_results",
-    indices = [androidx.room.Index(value = ["sessionId", "char", "phase", "idempotencyKey"], unique = true)],
+    indices = [androidx.room.Index(value = ["idempotencyKey"], unique = true)],
 )
 data class SessionResultEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,

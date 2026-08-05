@@ -164,4 +164,57 @@ class MasteryAdjudicatorTest {
         assertEquals(2, rec.masteryWrite)
         assertEquals(1, rec.streakSuccess(Dimension.WRITE), "升 3 后首次成功从链 1 开始（不借用升级前成功）")
     }
+
+    // ---- review-09 W7：P1-11 gateStreak 持久化（随 CharacterRecord 落库，新实例不丢）----
+
+    @Test
+    fun `gateStreak 随 record 持久化——新 adjudicator 实例跨调用不丢（P1-11）`() {
+        // 模拟跨天/重启：record 已从 store 加载（携带 gateStreak=2），新实例继续累计
+        val restart = MasteryAdjudicator()
+        var rec = CharacterRecord("家", masteryRecognize = 3, gateStreakRecognize = 2)   // L3 已两次间隔复习
+        rec = restart.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true)   // 第 3 次达标 → 升 4
+        assertEquals(4, rec.masteryRecognize, "重启后 gateStreak 从 record 读取，第 3 次间隔复习仍能升 L4")
+        assertEquals(0, rec.gateStreakRecognize, "门槛升级后达标链清零")
+    }
+
+    @Test
+    fun `gateStreak 门槛升级后清零并写入 record（P1-11）`() {
+        var rec = CharacterRecord("家", masteryWrite = 2)
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)   // 链 1
+        assertEquals(1, rec.gateStreakWrite, "未升级时达标链保存在 record")
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0)   // 链 2 → 升 3
+        assertEquals(3, rec.masteryWrite)
+        assertEquals(0, rec.gateStreakWrite, "门槛升级后达标链清零（自上次门槛升级以来语义）")
+        // 升级后复习轮达标：链从 0 重新累计（不借用升级前成功；L3 非复习成功不累计）
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0, isReview = true)
+        assertEquals(1, rec.gateStreakWrite)
+    }
+
+    @Test
+    fun `非达标成功与失败归零 gateStreak（P1-11）`() {
+        // L3 需要 isReview 达标：非复习成功不累计
+        var rec = CharacterRecord("家", masteryRecognize = 3, gateStreakRecognize = 1)
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = false)
+        assertEquals(0, rec.gateStreakRecognize, "L3 非复习成功不达标 → 链归零")
+        // 失败归零
+        rec = CharacterRecord("家", masteryRecognize = 3, gateStreakRecognize = 2)
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = false, promptLevel = 4, isReview = true)
+        assertEquals(0, rec.gateStreakRecognize, "失败打断达标链")
+    }
+
+    // ---- review-09 W7：P1-14 deriveStatus 门槛（MASTERY-CRITERIA §3）----
+
+    @Test
+    fun `deriveStatus reviewing 需识别+书写都 ≥2（P1-14）`() {
+        // recognize=2 + write=1：书写不足 → learning（修复前被误判 reviewing）
+        assertEquals("learning", CharacterRecord("家", masteryRecognize = 2, masteryWrite = 1).deriveStatus())
+        assertEquals("reviewing", CharacterRecord("家", masteryRecognize = 2, masteryWrite = 2).deriveStatus())
+    }
+
+    @Test
+    fun `deriveStatus mastered 需识别+书写都 ≥3 且理解 ≥2（P1-14）`() {
+        // recognize=3 + write=2：书写不足 → reviewing（修复前被误判 mastered）
+        assertEquals("reviewing", CharacterRecord("家", masteryRecognize = 3, masteryWrite = 2, masteryUnderstand = 2).deriveStatus())
+        assertEquals("mastered", CharacterRecord("家", masteryRecognize = 3, masteryWrite = 3, masteryUnderstand = 2).deriveStatus())
+    }
 }

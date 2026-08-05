@@ -300,15 +300,24 @@ class OnboardingViewModel(
             try {
                 val mm = VoiceHub.modelManager
                 // 分两段下载：TTS 先（女声朗读立即可用），再 STT
-                if (!mm.ttsReady()) mm.downloadTts { p ->
-                    ui = ui.copy(voiceDownloadProgress = p / 2)
+                if (!mm.ttsReady()) {
+                    val ok = mm.downloadTts { p ->
+                        ui = ui.copy(voiceDownloadProgress = p / 2)
+                    }
+                    // review-09 P1-05：下载完成但校验仍失败（残片/哈希不符）→ 按失败处理重试
+                    if (!ok) throw RuntimeException("语音包校验失败，请重试")
                 }
-                if (!mm.sttReady()) mm.downloadStt { p ->
-                    ui = ui.copy(voiceDownloadProgress = 50 + p / 2)
+                if (!mm.sttReady()) {
+                    val ok = mm.downloadStt { p ->
+                        ui = ui.copy(voiceDownloadProgress = 50 + p / 2)
+                    }
+                    if (!ok) throw RuntimeException("语音包校验失败，请重试")
                 }
-                // 加载离线引擎
-                VoiceHub.offline.initTts()
-                VoiceHub.offline.initStt()
+                // 加载离线引擎（review-09 W2：ONNX 加载 1-5s 不得主线程——ANR 风险）
+                withContext(Dispatchers.IO) {
+                    VoiceHub.offline.initTts()
+                    VoiceHub.offline.initStt()
+                }
                 ui = ui.copy(voiceDownloading = false, voiceDownloadProgress = 100, voiceDownloadDone = true, voiceModelsReady = true)
                 goPickMascot()
             } catch (e: Exception) {

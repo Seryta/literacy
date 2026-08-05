@@ -170,16 +170,23 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     }
     // 后台生命周期：退后台停监听（隐私+电池——老人不会自己关麦克风），回前台自动监听页恢复
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    // review-09 P1-04：延迟恢复用可取消的 Job（随组合销毁/再次退后台取消），不用无主 MainScope
+    var resumeJob: kotlinx.coroutines.Job? = null
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
                     speech.cancel()
                     listening = false
+                    resumeJob?.cancel()   // 再次退后台：取消延迟恢复（避免回后台后开麦）
+                    resumeJob = null
+                    voiceFlow.stop()   // review-09 P2-3：退后台暂停主动沟通播报
+                    flowTts.stop()
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    voiceFlow.resume()   // review-09 P2-3：回前台恢复沉默检测
                     // 回前台延迟恢复自动监听（等旧采集线程完全退出，避免并发崩溃）
-                    kotlinx.coroutines.MainScope().launch {
+                    resumeJob = scope.launch {
                         kotlinx.coroutines.delay(1500)
                         autoListenRestart.value?.invoke()
                     }
@@ -188,7 +195,10 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            resumeJob?.cancel()
+        }
     }
 
     Scaffold(
@@ -423,6 +433,8 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         key = "learn:$learnChar:$enterCount",   // P1-16：每次进入新 VM，provider 用最新配置
                         factory = LearnViewModelFactory(settings, hanzi, store),
                     )
+                    // review-09 P2-3：按钮/手写等交互重置全局沉默提示计时（协调器不打扰操作中的用户）
+                    vm.onUserInteraction = { markInteraction() }
                     // 学习页语音全控制：操作命令（帮助/跳过/暂停/继续/结束/复习控制）→ 按钮；
                     // 其余转写文本 → 教学管线（本地意图解析 + LLM）
                     val learnOnText: (String) -> Unit = { text ->

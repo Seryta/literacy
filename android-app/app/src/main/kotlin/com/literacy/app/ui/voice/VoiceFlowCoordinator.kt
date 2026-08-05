@@ -77,4 +77,13 @@ class VoiceFlowCoordinator(
         loopJob?.cancel()
         loopJob = null
     }
+
+    /** review-09 P2-3：回前台恢复沉默检测循环（ON_PAUSE stop 之后调用）。
+     *  review-09 W5：同时重置沉默计时/提示计数——退后台前已超时的话，回前台
+     *  不能 5s 内立刻播提示（提示属于离开前的沉默段，回前台视为新的交互段）。 */
+    fun resume() {
+        promptCount = 0
+        lastInteraction = System.currentTimeMillis()
+        ensureLoop()
+    }
 }

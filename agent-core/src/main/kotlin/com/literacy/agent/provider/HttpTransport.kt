@@ -25,13 +25,39 @@ class OkHttpTransport(
         .writeTimeout(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
+    // review-09 P1-13：在途 Call 引用 + 取消标记——同步 execute() 只能通过 cancel() 中断
+    // review-09 S2：单飞行约束——同一时间只有一个在途请求（App 串行 submit 队列保证）；
+    // 若未来允许并发请求，activeCall 需改为并发容器（如 CopyOnWriteArraySet<Call>）
+    @Volatile private var activeCall: okhttp3.Call? = null
+    @Volatile private var cancelled = false
+
+    /** 取消当前在途请求（离页取消；取消后拒绝新请求且不重试）。 */
+    fun cancelActive() {
+        cancelled = true
+        activeCall?.cancel()
+    }
+
     override fun post(url: String, body: String, headers: Map<String, String>): HttpResponse {
+        // 已取消（离页）：拒绝新请求（retryable=false，避免 HttpLlmProvider 重试续跑）
+        if (cancelled) throw ProviderException("传输已取消（页面已离开）", retryable = false)
         val requestBuilder = okhttp3.Request.Builder()
             .url(url)
             .post(body.toRequestBody("application/json".toMediaType()))
         headers.forEach { (k, v) -> requestBuilder.header(k, v) }
-        client.newCall(requestBuilder.build()).execute().use { resp ->
-            return HttpResponse(resp.code, resp.body?.string() ?: "")
+        val call = client.newCall(requestBuilder.build())
+        activeCall = call
+        try {
+            call.execute().use { resp ->
+                return HttpResponse(resp.code, resp.body?.string() ?: "")
+            }
+        } catch (e: ProviderException) {
+            throw e
+        } catch (e: Exception) {
+            // 取消导致的 IOException（Canceled）按非可重试处理——不触发超时重试续跑
+            if (cancelled) throw ProviderException("传输已取消（页面已离开）", retryable = false)
+            throw e
+        } finally {
+            if (activeCall === call) activeCall = null
         }
     }
 }

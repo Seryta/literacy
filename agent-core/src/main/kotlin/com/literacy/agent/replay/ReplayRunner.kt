@@ -182,7 +182,9 @@ class ReplayRunner(
             reviewAnswered = false
             reviewAnsweredScore = null
             reviewAnsweredAttempt = null
+            reviewAnsweredKey = null
             assessRecordedForRound.clear()
+            recentUiTools.clear()   // 验收 P1-3：换字后旧字 UI 工具作废（旧 show_options 不得按新字重新生成）
             state = state.copy(
                 mode = Mode.LEARNING,
                 reviewStage = null,
@@ -286,7 +288,13 @@ class ReplayRunner(
         if (state.mode == Mode.REVIEW && state.reviewStage == ReviewStage.ASSESS) {
             reviewAnswered = true   // review-09 P1-4：判题证据
             reviewAnsweredScore = if (correct) 1.0 else 0.0   // 本地判题真值（补记 assess 用）
-            reviewAnsweredAttempt = state.attempt?.copy(score = reviewAnsweredScore)   // 完整本地上下文
+            // 残余修复（验收 P1-1）：冻结快照保存原始幂等键 + 判题时提示等级——
+            // 补记 assess 落库用冻结 key（不占用强化 key）/issues/promptLevel，不串强化阶段状态
+            reviewAnsweredKey = state.idempotencyKey
+            reviewAnsweredAttempt = (state.attempt ?: com.literacy.agent.model.AttemptContext()).copy(
+                score = reviewAnsweredScore,
+                promptLevel = state.attempt?.promptLevel ?: state.promptLevel,
+            )
         }
         val ev = ButtonTapped(action, correct, exerciseId)
         lastEvent = ev
@@ -307,6 +315,7 @@ class ReplayRunner(
         reviewAnswered = false
         reviewAnsweredScore = null
         reviewAnsweredAttempt = null
+        reviewAnsweredKey = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(
             mode = Mode.REVIEW,
@@ -335,6 +344,12 @@ class ReplayRunner(
     var reviewAnsweredScore: Double? = null
     /** 完整本地判题上下文（score+题型+维度）——补记 assess 恢复本地绑定，防模型题型/最弱维度误更新。 */
     var reviewAnsweredAttempt: com.literacy.agent.model.AttemptContext? = null
+        private set
+
+    /** 判题冻结时的原始幂等键（验收 P1-1）：tapped 冻结快照时一并保存——
+     *  补记 assess 落库用冻结 key（判题时签发），不占用强化阶段新签发的 key，
+     *  强化结果到达时不被全局去重静默丢弃；冻结 key 已落库则拒绝重复记账。 */
+    var reviewAnsweredKey: String? = null
         private set
 
     /** 本复习轮（当前字）已落库 assess 的字集合——
@@ -383,6 +398,7 @@ class ReplayRunner(
         reviewAnswered = false   // review-09 P1-4：下一复习字重新判题
         reviewAnsweredScore = null   // 残余修复：本地判题真值同步清（防跨字借用）
         reviewAnsweredAttempt = null
+        reviewAnsweredKey = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(char = reviewQueue.removeFirst(), reviewStage = ReviewStage.RECALL)
         return true
@@ -749,11 +765,17 @@ class ReplayRunner(
             rejectReasons += "record_result: key 不匹配 App 签发的幂等键"   // P1-3
             return
         }
+        // 残余修复（验收 P1-1）：补记 assess 判定提前——冻结快照存在且当前 attempt 非 assess
+        // （REINFORCE 已产生新作答）即为延迟补记，落库/裁决统一走冻结快照
+        val attempt = state.attempt
+        val backfillAttempt = if (phase == "assess" && attempt?.phase != "assess" && reviewAnsweredAttempt != null) reviewAnsweredAttempt else null
+        // 补记落库用冻结的原始幂等键（判题时签发）：不占用强化阶段新签发的 key，
+        // 强化结果到达时不被全局去重静默丢弃；冻结 key 已落库（当场 assess）则拒绝重复记账
+        val effectiveKey = if (backfillAttempt != null) (reviewAnsweredKey ?: key) else key
         // review-09 P1-7 + P1-10：幂等预检——App 签发 key 全局去重（Room 与核心 Store 语义一致）；
         // 同 key 换 phase/session/char 不得重复计分（复合键曾允许换 phase 双计）
-        if (store.results.any { it.idempotencyKey == key }) return
+        if (store.results.any { it.idempotencyKey == effectiveKey }) return
         // review-09 P1-7：本地权威结果——attempt 绑定时 score 用本地裁决值、phase 必须匹配
-        val attempt = state.attempt
         // 生产学习轮：无本地尝试证据（attempt 为空）即拒绝（复习轮走下方独立证据门禁）
         if (strictResultValidation && state.mode != Mode.REVIEW && attempt == null) {
             rejectedCalls += "record_result"
@@ -762,9 +784,9 @@ class ReplayRunner(
         }
         if (attempt != null) {
             // 残余修复（验收 P1）：延迟补记 assess 豁免 phase 校验——attempt 已被 REINFORCE
-            // 作答覆盖（phase=reinforce），补记的 assess 是判题延迟落库（冻结快照可回填）
-            val backfillAssess = phase == "assess" && attempt.phase != "assess" && reviewAnsweredAttempt != null
-            if (attempt.phase != null && phase != attempt.phase && !backfillAssess) {
+            // 作答覆盖（phase=reinforce），补记的 assess 是判题延迟落库（冻结快照可回填，
+            // backfillAttempt 已提前判定）
+            if (attempt.phase != null && phase != attempt.phase && backfillAttempt == null) {
                 rejectedCalls += "record_result"
                 rejectReasons += "record_result: phase 与本地事件不符（期望 ${attempt.phase}）"   // review-09 P1-7
                 return
@@ -825,10 +847,6 @@ class ReplayRunner(
         // （原 ?: 0.0 不可达，删除）——本地权威优先，模型分数兜底
         // 残余修复：补记 assess（attempt 被 advanceReview 清空、reviewAnswered 门禁路径）
         // 必须用本地判题真值（reviewAnsweredScore），不得用模型分数覆盖本地判题结果
-        // 残余修复（验收 P1）：补记 assess 用冻结快照的条件是「当前 attempt 已不是 assess」
-        // （REINFORCE 已产生新作答）——只看 score 为 null 会漏掉 REINFORCE 作答后的补记，
-        // 把强化阶段分数/题型/维度串进 assess 落库
-        val backfillAttempt = if (phase == "assess" && attempt?.phase != "assess" && reviewAnsweredAttempt != null) reviewAnsweredAttempt else null
         val effectiveScore = if (isSkip) null else if (backfillAttempt?.score != null) backfillAttempt.score else (attempt?.score ?: score)
         val ok = !isSkip && (effectiveScore ?: 0.0) >= 0.6
         // review-09 P1-10：attempt.dimension 优先（写评估本地绑定 WRITE）；
@@ -853,10 +871,14 @@ class ReplayRunner(
                 phase = phase,
                 exerciseType = localExerciseType,   // review-09 P1-8：本地题型优先（模型回传缺失/篡改不覆盖）
                 score = effectiveScore,   // review-10 P1-1：落库统一用本地权威值（模型不可写假分）
-                promptLevel = promptLevelStr ?: (state.promptLevel.toString()),
-                idempotencyKey = key,
-                // review-10 P1-1：issues 用本次 attempt 绑定的（写评估当次 issues，不读上一笔）
-                issues = attempt?.issues ?: emptyList(),
+                // 残余修复（验收 P1-1）：补记 assess 用冻结 promptLevel/issues/key——
+                // 不取当前强化尝试的等级/问题，不占用强化 key
+                promptLevel = if (backfillAttempt?.promptLevel != null) backfillAttempt.promptLevel.toString()
+                    else promptLevelStr ?: (state.promptLevel.toString()),
+                idempotencyKey = effectiveKey,
+                // review-10 P1-1：issues 用本次 attempt 绑定的（写评估当次 issues，不读上一笔）；
+                // 补记 assess 用冻结快照 issues（判题无 issues 为空，不读强化阶段）
+                issues = backfillAttempt?.issues ?: attempt?.issues ?: emptyList(),
             ),
             rec,
         ) { latest ->
@@ -866,7 +888,8 @@ class ReplayRunner(
                 // 模型 prompt_level 字段仅用于落库展示（缺失/有提示尝试不再被误判为 L0 无提示掌握）
                 // review-09 P1-12：guided_write（跟写）是教学流程，不提升硬掌握度——
                 // 仅 independent_write 是硬性检测点（MASTERY-CRITERIA §4）
-                val localLevel = attempt?.promptLevel ?: state.promptLevel
+                // 残余修复（验收 P1-1）：补记 assess 用冻结快照的判题提示等级（不取当前强化尝试）
+                val localLevel = (backfillAttempt ?: attempt)?.promptLevel ?: state.promptLevel
                 adjudicator.adjudicate(latest, dim, ok, localLevel, isReview = state.mode == Mode.REVIEW, today = java.time.LocalDate.now().toString())
             } else latest
             // P1-1：学习轮 + 复习轮都排期（等级1→当天，等级2→1-3天，§2/§6）——复习队列生产链路不再为空

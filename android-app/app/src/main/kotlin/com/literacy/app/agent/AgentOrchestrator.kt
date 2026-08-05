@@ -200,6 +200,14 @@ class AgentOrchestrator(
                     com.literacy.agent.model.VoiceIntent.RECOGNIZED
                 } else com.literacy.agent.model.VoiceIntent.WRONG
             } else com.literacy.agent.model.VoiceIntent.OTHER
+        // 验收 P1-3：REQUEST_NEW_CHAR 换字后作废旧字题目状态——runner 侧 recentUiTools 已清
+        // （换字作废），此处同步清 App 侧本地题目缓存与消费记录，防历史题套新字重新生成
+        if (intent == com.literacy.agent.model.VoiceIntent.REQUEST_NEW_CHAR) {
+            lastExerciseId = null
+            lastExerciseType = null
+            currentExercise = null
+            consumedExerciseIds.clear()
+        }
         // review-10 P1-1：按当前阶段绑定本地 phase/dimension（不再固定 recognize——
         // explain/sentence 等语音结果写错维度/被拒）
         // review-11 批A：复习轮语音作答与 tapped 一致——phase 留空（record_result 按 reviewStage
@@ -419,24 +427,27 @@ class AgentOrchestrator(
         // 选项一律本地生成（当前字 + 字库校验的干扰字）——不依赖模型 options 参数，标准调用也能出题
         runner.recentUiTools.lastOrNull { it.name == "show_options" }?.let { tool ->
             val exId = tool.arguments["exercise_id"]?.toString()
-            // review-11 批A：作答后旧题不得复活——已消费的题目 id 跳过（currentExercise 保持 null）；
-            // 新题（未消费）出现时旧消费记录作废（题目 id 可复用）
-            if (exId != null) {
-                if (exId in consumedExerciseIds) return@let
-                consumedExerciseIds.clear()
-            }
             // 本地生成选项：当前字 + 字库中可用的干扰字（不依赖模型 options）
             val target = runner.state.char ?: ""
             val distractors = DISTRACTOR_CHARS.filter { it != target && hanzi?.find(it) != null }.take(3)
             val opts = if (target.isNotEmpty()) listOf(target) + distractors else null
             if (!opts.isNullOrEmpty()) {
+                // 残余修复（验收 P1-2）：稳定 fallback ID——基于当前字 + 未洗牌选项集排序
+                // （直接取 shuffled 哈希：每轮洗牌不同、同题 ID 漂移，消费检查失效）；
+                // 换字/换选项才变化，作答后同题不可复活
+                val stableHash = (target + "|" + opts.sorted().joinToString(",")).hashCode().toString()
+                // review-11 批A + 验收 P1-2：作答后旧题不得复活——原始 exId 与 fallback ID
+                // 都参与消费检查（fallback 题作答后同样一次性消费）；新题出现时旧记录作废
+                val consumedKey = exId ?: stableHash
+                if (consumedKey in consumedExerciseIds) return@let
+                consumedExerciseIds.clear()
                 // 残余修复（验收 P1）：选项乱序（正确答案不恒为首位——恒首位用户盲选即可判对，
                 // 检测与掌握度失真）；correct 字段仍指向 target，判题不受顺序影响
                 val shuffled = opts.shuffled()
                 // 残余修复（验收 P1）：fallback ID 回写——canonical show_options 可不带 exercise_id，
-                // 无 ID 时消费检查不生效，作答后下一回合旧题复活；回写后同题同选项哈希稳定，
+                // 无 ID 时消费检查不生效，作答后下一回合旧题复活；回写后同题 ID 稳定，
                 // consumedExerciseIds 一次性消费生效（换字后选项变→哈希变→不误伤新题）
-                val effectiveId = exId ?: shuffled.hashCode().toString()
+                val effectiveId = exId ?: stableHash
                 lastExerciseId = effectiveId
                 // 残余修复（验收 P2）：题型按场景区分——READ_ONLY 学习轮选字填空=fill_blank
                 // （dimensionForPhase 同推 RECOGNIZE，但不破坏既有 fill_blank 语义）；

@@ -34,8 +34,11 @@ class OfflineVoiceEngine(
     // 引擎级互斥——
     // - ttsLock：同一时刻只允许一个 generate+play（native OfflineTts 非并发安全）
     // - sttLock：recognizer 的捕获/释放/重建与 startListening 串行（防 use-after-release）
+    // - sttStateLock：监听状态标志（cancelled/listening/listenGeneration）轻量锁——
+    //   验收 P1-4：cancelListening 主线程快路径只等此锁（不等 initStt 的 sttLock 长窗口）
     private val ttsLock = Any()
     private val sttLock = Any()
+    private val sttStateLock = Any()
 
     // ── TTS（VITS 中文女声）────────────────────────────────────────
     private var tts: OfflineTts? = null
@@ -50,7 +53,10 @@ class OfflineVoiceEngine(
         // 残余修复（验收 P2）：重建前停止播放并释放旧 native 实例（重复下载/重初始化不遗留）；
         // 构建+赋值整体在锁内——speak 不得在 release 与替换之间并发拿已释放实例
         synchronized(ttsLock) {
-            cancelSpeak()
+            // 验收 P2-6：重建不 cancelSpeak——cancelSpeak 作废所有播放代次，排队中
+            // （pendingGen）的初始语音补读被作废会偶发无声；重建语义是"引擎替换"而非
+            // "打断用户"——stop 停正在播的 AudioTrack、release 旧 native 实例即可，
+            // 排队/在途任务的代次仍有效（补读不被误作废）
             stop()
             tts?.release()
             try {
@@ -109,8 +115,9 @@ class OfflineVoiceEngine(
                 // 残余修复（验收 P2）：play 前二次校验代次（play 与代次检查间的窗口被取消则不播）
                 val samples = audio.samples
                 if (samples.isEmpty() || (generation != 0 && generation != ttsGeneration.get())) return false
-                play(samples, audio.sampleRate, generation)
-                true
+                // 验收 P2-5：play 可能因取消提前返回（未真正播放）——speak 必须返回其真实结果，
+                // 否则外层可能无播放却触发 onTtsCompleted
+                return play(samples, audio.sampleRate, generation)
             } catch (e: Exception) {
                 Log.w(tag, "离线 TTS 朗读失败", e)
                 false
@@ -123,16 +130,16 @@ class OfflineVoiceEngine(
         audioTrack = null
     }
 
-    private fun play(samples: FloatArray, sampleRate: Int, generation: Int) {
+    private fun play(samples: FloatArray, sampleRate: Int, generation: Int): Boolean {
         // 残余修复（验收 P2）：PCM 转换/建轨/写入是真实播放前的大窗口——转换后、play() 前
         // 各校验一次代次（此间 cancel+stop 只停已发布 track，看不到未发布的；不查则旧音频仍会响起）
-        if (generation != 0 && generation != ttsGeneration.get()) return
+        if (generation != 0 && generation != ttsGeneration.get()) return false
         val short = ShortArray(samples.size)
         for (i in samples.indices) {
             val s = (samples[i] * 32767f).toInt().coerceIn(-32768, 32767)
             short[i] = s.toShort()
         }
-        if (generation != 0 && generation != ttsGeneration.get()) return
+        if (generation != 0 && generation != ttsGeneration.get()) return false
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -149,10 +156,11 @@ class OfflineVoiceEngine(
         track.write(short, 0, short.size)
         if (generation != 0 && generation != ttsGeneration.get()) {
             track.release()   // 窗口内被取消：不播，直接释放
-            return
+            return false
         }
         track.play()
         audioTrack = track
+        return true
     }
 
     // ── STT（流式 zipformer 中文识别）─────────────────────────────
@@ -228,10 +236,17 @@ class OfflineVoiceEngine(
             // 重建前有活动监听：自动恢复（synchronized 可重入；新 recognizer 已就绪）——
             // 不做则监听静默死亡，用户说话无声。
             // 残余修复（验收 P1）：重建期间若被页面 cancel（退后台，listenGeneration 已变），
-            // 不再自动开麦（否则恢复会覆盖退后台取消、在后台重新开麦）
-            if (wasListening && recognizer != null && listenGeneration == captureGen) {
-                val ok = startListening(savedOnResult ?: {}, onPartialCb ?: {}, savedAutoRestart)
-                if (!ok) Log.w(tag, "initStt 重建后恢复监听失败（无输入设备？）")
+            // 不再自动开麦（否则恢复会覆盖退后台取消、在后台重新开麦）。
+            // 验收 P1-4：检查 + startListening 整体在 sttStateLock 内与 cancel 互斥——
+            // 取消要么先于检查（代次变→不恢复），要么后于 startListening（停麦生效），
+            // "恢复覆盖取消"竞态不回归；恢复判断不再等 initStt 重建的 sttLock 长窗口
+            if (wasListening && recognizer != null) {
+                synchronized(sttStateLock) {
+                    if (listenGeneration == captureGen) {
+                        val ok = startListening(savedOnResult ?: {}, onPartialCb ?: {}, savedAutoRestart)
+                        if (!ok) Log.w(tag, "initStt 重建后恢复监听失败（无输入设备？）")
+                    }
+                }
             }
         }
     }
@@ -406,15 +421,18 @@ class OfflineVoiceEngine(
     }
 
     fun cancelListening() {
-        // 残余修复（验收 P1）：与 initStt 恢复块（检查代次 + startListening）同锁串行——
-        // 外部取消要么先于检查（代次变→不恢复），要么后于 startListening（停麦生效），
-        // 不再有"检查通过→取消插入→startListening 覆盖 cancelled"的重新开麦窗口
-        synchronized(sttLock) {
+        // 验收 P1-4：主线程快路径——状态标志在轻量锁（sttStateLock）内原子更新，
+        // 不等 initStt 的 sttLock 长窗口（最长 2s join + native recognizer 构造，等锁可致 ANR）；
+        // record.stop 移出锁外（AudioRecord.stop 非长操作，失败有 catch 兜底）。
+        // 与 initStt 恢复块（同样持 sttStateLock 检查代次 + startListening）串行：
+        // 取消要么先于检查（代次变→不恢复），要么后于 startListening（停麦生效）——
+        // "恢复覆盖取消"竞态不回归（上轮 P1 承诺）
+        synchronized(sttStateLock) {
             cancelled = true
             listening = false
             listenGeneration++   // 作废旧代在途回调
-            try { record?.stop() } catch (e: Exception) {}
         }
+        try { record?.stop() } catch (e: Exception) {}
     }
 
     fun destroy() {

@@ -69,6 +69,9 @@ class ModelManager(context: Context) {
         // 快路径失效走完整哈希（此前只查非空，损坏文件会绕过哈希直接进 JNI）
         if (marker.isFile && marker.readTextOrNull() == markerContent(spec, dir)) {
             // review-09 P1-05：快路径至少确认清单文件存在+非空（标记残留时缺失/损坏模型不得进入 JNI）
+            // 验收 P2-7：已知边界——快路径只比 marker（含各文件长度）+ 文件存在性，
+            // 等长损坏（内容被改写但长度不变）不重算 SHA256：完整哈希每启动 84MB 成本不可接受。
+            // 有意取舍：下载/写盘链路有官方 SHA256 校验兜底，快路径只防"文件缺失/截断/长度变化"类故障。
             val filesExist = spec.files.all { (path, _) ->
                 val f = File(dir, path.substringAfterLast('/'))
                 f.isFile && f.length() > 0

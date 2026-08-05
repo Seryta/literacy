@@ -71,6 +71,14 @@ android {
         buildConfig = true
     }
 
+    // JVM 单测（testDebugUnitTest）：AgentOrchestratorTest 等会走到 android.util.Log（stub）——
+    // 返回默认值而非抛 "not mocked"，使 App 层本地逻辑（选择题一次性消费等）可测
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     // 共享 agent-core domain 源码（Android 不能直接依赖 JVM 模块变体；
     // agent-core main 无 JVM 特有依赖，源码直接编译进 app）
     sourceSets["main"].apply {

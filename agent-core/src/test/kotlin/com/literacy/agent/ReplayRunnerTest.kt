@@ -257,6 +257,56 @@ class ReplayRunnerTest {
         assertEquals(0, rec.masteryWrite, "强化 WRITE 不得串入 assess")
     }
 
+    // ---- 验收 P1-1：补记 assess 用冻结原始幂等键（不占用强化 key，强化结果不被幂等误吞）----
+
+    @Test
+    fun `补记 assess 用冻结 key 不占用强化 key，reinforce 落库不被幂等误吞`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.strictResultValidation = true   // 生产路径：key 必须回传 App 签发值
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        // ASSESS 判题：App 签发 key A，本地判题（冻结快照含 key A + 判题时提示等级）
+        runner.configureState(runner.state.copy(
+            idempotencyKey = "app-key-A",
+            attempt = com.literacy.agent.model.AttemptContext(
+                phase = null, exerciseType = "audio_choice",
+                dimension = com.literacy.agent.model.Dimension.RECOGNIZE,
+            ),
+        ))
+        runner.tapped("家", correct = false, exerciseId = "e1")   // 0.0，冻结快照
+        // App 层 advanceReview：新 key B + 强化作答（本阶段证据）→ REINFORCE
+        runner.configureState(runner.state.copy(
+            idempotencyKey = "app-key-B",
+            attempt = com.literacy.agent.model.AttemptContext(
+                phase = "reinforce", score = 1.0, exerciseType = "guided_write",
+                dimension = com.literacy.agent.model.Dimension.WRITE,
+            ),
+        ))
+        runner.advanceReview()   // assess → reinforce
+        // 模型补记 assess（回传当前注入 key B）——落库必须用冻结 key A，不占用 key B
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "app-key-B"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "补记 assess 不被拒：" + runner.rejectReasons.joinToString("; "))
+        assertEquals(1, runner.store.results.size)
+        assertEquals(0, runner.store.getCharacter("家").masteryWrite, "assess 冻结 audio_choice 不串 WRITE")
+        // 强化结果（同 key B）随后到达：不得被全局去重静默丢弃
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "reinforce", "score" to 1.0, "prompt_level" to "none", "idempotency_key" to "app-key-B"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "强化结果不被幂等误吞：" + runner.rejectReasons.joinToString("; "))
+        assertEquals(2, runner.store.results.size, "assess + reinforce 都应落库")
+        val assess = runner.store.results.first { it.phase == "assess" }
+        assertEquals("app-key-A", assess.idempotencyKey, "补记 assess 用冻结原始 key（判题时签发）")
+        assertEquals("3", assess.promptLevel, "补记 assess 用冻结快照的判题提示等级（不取当前强化尝试）")
+        assertEquals(emptyList(), assess.issues)
+        val reinforce = runner.store.results.first { it.phase == "reinforce" }
+        assertEquals("app-key-B", reinforce.idempotencyKey, "强化结果用当前 key 正常落库")
+    }
+
     // ---- 残余修复（验收 P1）：RECALL 阶段点击不开 ASSESS 推进门禁 ----
 
     @Test

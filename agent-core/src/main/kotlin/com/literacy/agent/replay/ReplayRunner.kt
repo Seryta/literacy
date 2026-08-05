@@ -350,6 +350,7 @@ class ReplayRunner(
         if (state.reviewStage != ReviewStage.NEXT) return false   // P1-9：不能从 RECALL 直接跳字
         if (reviewQueue.isEmpty()) return false
         reviewAnswered = false   // review-09 P1-4：下一复习字重新判题
+        reviewAnsweredScore = null   // 残余修复：本地判题真值同步清（防跨字借用）
         state = state.copy(char = reviewQueue.removeFirst(), reviewStage = ReviewStage.RECALL)
         return true
     }

@@ -217,4 +217,42 @@ class MasteryAdjudicatorTest {
         assertEquals("reviewing", CharacterRecord("家", masteryRecognize = 3, masteryWrite = 2, masteryUnderstand = 2).deriveStatus())
         assertEquals("mastered", CharacterRecord("家", masteryRecognize = 3, masteryWrite = 3, masteryUnderstand = 2).deriveStatus())
     }
+    // ---- 残余修复复核：gateStreak 间隔日语义（同日不累计但保留链、跨日累计、学习路径不受影响）----
+
+    @Test
+    fun `gateStreak 学习门槛同日连续仍累计（L1-L2 升级语义不变）`() {
+        val adj = MasteryAdjudicator()
+        var rec = CharacterRecord("家", masteryRecognize = 1)   // 学习中（current<2）
+        val today = "2026-08-05"
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 1, today = today)
+        assertEquals(1, rec.gateStreakRecognize, "学习门槛首次达标 +1")
+        // 同日第二次达标（学习路径"连续 2 次"不应被 day-gate 阻断）
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 1, today = today)
+        assertEquals(2, rec.masteryRecognize, "同日连续 2 次 L1-L2 成功升初步掌握（学习路径不被 day-gate 阻断）")
+        assertEquals(0, rec.gateStreakRecognize, "门槛升级后达标链清零（既有规则）")
+    }
+
+    @Test
+    fun `gateStreak L3 复习跨日累计`() {
+        val adj = MasteryAdjudicator()
+        var rec = CharacterRecord("家", masteryRecognize = 3)
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-01")
+        assertEquals(1, rec.gateStreakRecognize)
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-02")
+        assertEquals(2, rec.gateStreakRecognize, "跨日复习累计")
+    }
+
+    @Test
+    fun `gateStreak L3 复习同日不累计但保留链（防多 key 凑间隔）`() {
+        val adj = MasteryAdjudicator()
+        // 跨日累计 1 次后，同日再答（assess+reinforce 两条记录场景）不累计也不清零
+        var rec = CharacterRecord("家", masteryRecognize = 3, lastReview = "2026-08-04")
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-05")
+        assertEquals(1, rec.gateStreakRecognize)
+        // 同日第二次（lastReview 已被置 today 的 reinforce 路径）：保留链不清零
+        rec = rec.copy(lastReview = "2026-08-05")
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-05")
+        assertEquals(1, rec.gateStreakRecognize, "同日复习保留链（不累计不清零）")
+        assertEquals(3, rec.masteryRecognize, "同日重复作答不能把 L3 抬到 L4")
+    }
 }

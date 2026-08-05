@@ -68,10 +68,13 @@ class MasteryAdjudicator {
         } else {
             record.withStreak(dim, 0, record.streakErrors(dim) + 1)
         }
-        // 残余修复：gateStreak 只在“间隔日”累计——同一天（同日多次作答）只算一次间隔复习，
-        // 防止同一复习轮用多个 key 凑成三次间隔把 L3 直接抬到 L4
-        val newGate = if (ok && qualifies(current, promptLevel, isReview) && record.lastReview != today) {
-            record.gateStreak(dim) + 1
+        // 残余修复（复核）：gateStreak 语义区分——
+        // - 学习门槛（current<3）：连续达标成功累计（同 session 连续算，L1-L2/L2-L3 升级语义不变）
+        // - L3→L4（current==3，须 isReview）：按间隔日累计——同日多次复习保留链不清零不累计
+        //   （防同轮多 key 凑三次间隔）；跨日复习才 +1
+        val newGate = if (ok && qualifies(current, promptLevel, isReview)) {
+            if (current == 3 && record.lastReview == today) record.gateStreak(dim)   // 同日 L3 复习：保留链
+            else record.gateStreak(dim) + 1
         } else 0
 
         val next = when {

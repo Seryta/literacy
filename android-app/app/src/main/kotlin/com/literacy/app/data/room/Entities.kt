@@ -28,6 +28,12 @@ data class CharacterEntity(
     val gateStreakWrite: Int = 0,
     val gateStreakUnderstand: Int = 0,
     val gateStreakApply: Int = 0,
+    // 各维度上次间隔累计日期（随 gateStreak 持久化——lastReview 整字共享会
+    // 跨维度误伤：同日先 RECOGNIZE 后 WRITE 复习被当重复不累计；按维度记录后各自独立）
+    val gateStreakDateRecognize: String? = null,
+    val gateStreakDateWrite: String? = null,
+    val gateStreakDateUnderstand: String? = null,
+    val gateStreakDateApply: String? = null,
     val commonMistakes: String = "",   // JSON 数组
     val source: String? = null,
     val easeFactor: Double = 2.5,

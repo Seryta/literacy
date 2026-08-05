@@ -25,12 +25,17 @@ import com.literacy.app.ui.voice.VoiceHub
 /** STT 生命周期封装（离线 sherpa 优先，系统 SpeechRecognizer 兜底）。 */
 class SpeechInputManager(context: Context) {
     private val appContext = context.applicationContext
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var onResult: ((SpeechOutcome) -> Unit)? = null
     private var onPartial: ((String) -> Unit)? = null   // 实时转写（边说边显示）
-    private var autoRestart = false          // 连续监听模式（onboarding 自动听）
-    private var cancelled = false
+    // 跨线程状态：系统 SpeechRecognizer 回调在 binder 线程（读），主线程写——
+    // 无内存屏障时取消后迟到回调可能读到旧值穿透，需 @Volatile
+    @Volatile private var autoRestart = false          // 连续监听模式（onboarding 自动听）
+    @Volatile private var cancelled = false
+    // 监听代次——start 时 ++，cancel/destroy 时 ++；
+    // 系统 SpeechRecognizer 回调（onResults/onError/onPartialResults）在 binder 线程异步迟到，
+    // 取消后仍可能到达——所有对外回调投递前校验代次，迟到结果不穿透到新监听/取消后
+    @Volatile private var generation = 0
 
     sealed interface SpeechOutcome {
         data class Text(val text: String) : SpeechOutcome
@@ -55,9 +60,12 @@ class SpeechInputManager(context: Context) {
             this.cancelled = false
             onResult = callback
             this.onPartial = onPartial
+            val gen = ++generation   // 新一代监听
             return VoiceHub.offline.startListening(
-                onResultText = { text -> mainHandler.post { callback(SpeechOutcome.Text(text)) } },
-                onPartial = { p -> mainHandler.post { onPartial?.invoke(p) } },
+                // 引擎已在主线程 post + 代次校验（listenGeneration），此处直接回调不再二次 post
+                // （二次 post 会在引擎校验与执行之间重新打开取消穿透窗口）；manager 代次再兜一层
+                onResultText = { text -> if (gen == generation) callback(SpeechOutcome.Text(text)) },
+                onPartial = { p -> if (gen == generation) onPartial?.invoke(p) },
                 autoRestart = autoRestart,
             )
         }
@@ -66,6 +74,7 @@ class SpeechInputManager(context: Context) {
         this.cancelled = false
         onResult = callback
         this.onPartial = onPartial
+        val gen = ++generation   // 新一代监听（系统分支回调无引擎代次，manager 全权校验）
         val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(appContext).also { recognizer = it }
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -76,6 +85,7 @@ class SpeechInputManager(context: Context) {
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
+                if (gen != generation) return   // 取消/新一代监听后迟到错误不投递
                 when {
                     // 连续监听：用户没说话/没听清 → 静默重启继续听（不打扰）
                     autoRestart && !cancelled && (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) -> {
@@ -96,6 +106,7 @@ class SpeechInputManager(context: Context) {
                 }
             }
             override fun onResults(results: Bundle?) {
+                if (gen != generation) return   // 取消/新一代监听后迟到结果不投递
                 val text = results
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
@@ -112,6 +123,7 @@ class SpeechInputManager(context: Context) {
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {
+                if (gen != generation) return   // 取消/新一代监听后迟到转写不投递
                 val text = partialResults
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
@@ -154,6 +166,7 @@ class SpeechInputManager(context: Context) {
     fun cancel() {
         cancelled = true
         autoRestart = false
+        generation++   // 取消后系统回调迟到不穿透
         recognizer?.cancel()
         // review-09 P1-04：离线麦也要停（此前只停系统识别器，退后台离线继续采集）
         com.literacy.app.ui.voice.VoiceHub.offline.cancelListening()
@@ -161,6 +174,7 @@ class SpeechInputManager(context: Context) {
 
     fun destroy() {
         cancelled = true
+        generation++   // 销毁后回调不穿透
         recognizer?.destroy()
         recognizer = null
         // review-09 P1-04：统一离线识别器的生命周期入口

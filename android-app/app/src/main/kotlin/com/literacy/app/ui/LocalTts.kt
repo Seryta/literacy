@@ -18,6 +18,12 @@ class LocalTts(context: Context) {
     private var ready = false
     private var pending: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    // 离线 VITS generate 是同步 CPU 重操作——LocalTts.speak 常被主线程调用
+    // （Compose 点击/引导播报），离线路径必须后台生成，不在主线程做 generate。
+    // 单线程串行：后进的朗读自然排在后。
+    // 打断语义：speak 取播放代次（nextSpeakGeneration）——用户开口 stop() 调
+    // cancelSpeak 作废代次，排队/生成中的任务播放前校验失败不播（旧朗读让位给用户）
+    private val offlineExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -33,7 +39,18 @@ class LocalTts(context: Context) {
     fun speak(text: String) {
         if (text.isBlank()) return
         if (VoiceHub.offlineTtsReady) {
-            try { if (VoiceHub.offline.speak(text)) return } catch (e: Exception) {}
+            // 后台线程生成+播放（主线程不做 native generate）。
+            // 播放代次：打断（stop→cancelSpeak）或新朗读会使代次过期，
+            // 排队/生成中任务不播放；被取代的任务不得走系统兜底重播旧文本
+            val gen = VoiceHub.offline.nextSpeakGeneration()
+            offlineExecutor.execute {
+                val ok = try { VoiceHub.offline.speak(text, gen) } catch (e: Exception) { false }
+                // 仅真实失败（代次未变）回主线程走系统兜底；被打断/取代则不重播
+                if (!ok && gen == VoiceHub.offline.currentSpeakGeneration()) {
+                    mainHandler.post { doSpeak(text) }
+                }
+            }
+            return
         }
         if (VoiceHub.initInProgress) {
             // 离线引擎加载中：排队，等就绪补读（避免走系统无声）
@@ -48,7 +65,17 @@ class LocalTts(context: Context) {
     private fun retryWhenReady() {
         mainHandler.postDelayed({
             if (VoiceHub.offlineTtsReady) {
-                pending?.let { VoiceHub.offline.speak(it); pending = null }
+                pending?.let {
+                    // 补读同样走后台线程 + 播放代次（打断/新朗读后不播；被取代不系统兜底）
+                    val gen = VoiceHub.offline.nextSpeakGeneration()
+                    offlineExecutor.execute {
+                        val ok = try { VoiceHub.offline.speak(it, gen) } catch (e: Exception) { false }
+                        if (!ok && gen == VoiceHub.offline.currentSpeakGeneration()) {
+                            mainHandler.post { doSpeak(it) }
+                        }
+                    }
+                    pending = null
+                }
             } else if (VoiceHub.initInProgress) {
                 retryWhenReady()
             } else {
@@ -68,7 +95,8 @@ class LocalTts(context: Context) {
 
     /** 停止朗读（用户开口打断时调用——机器人让位给用户说）。 */
     fun stop() {
-        VoiceHub.offline.stop()
+        VoiceHub.offline.cancelSpeak()   // 作废播放代次：排队/生成中的任务播放前校验失败不播（打断回归修复）
+        VoiceHub.offline.stop()          // 停止正在播放的 AudioTrack
         pending = null
         try { tts?.stop() } catch (e: Exception) {}
     }

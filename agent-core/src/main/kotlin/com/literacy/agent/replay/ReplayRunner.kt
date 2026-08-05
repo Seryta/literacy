@@ -293,6 +293,7 @@ class ReplayRunner(
         // review-09 P1-9：按复习字边界清零判题证据（新复习字需重新作答）
         reviewAnswered = false
         reviewAnsweredScore = null
+        assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(
             mode = Mode.REVIEW,
             reviewStage = ReviewStage.RECALL,
@@ -319,6 +320,20 @@ class ReplayRunner(
     /** 本地判题真值分数（reviewAnswered 对应 1.0/0.0）——补记 assess 用本地分，防模型改分。 */
     var reviewAnsweredScore: Double? = null
         private set
+
+    /** 本复习轮（当前字）已落库 assess 的字集合——
+     *  REINFORCE 补记 assess 是延迟落库容错（判题未当场落库），
+     *  但同一作答只能记账一次：key A 已落库后再用 advanceReview 新签发的 key B
+     *  补记同一次判题 = 重复记账（同一作答裁决两次，gateStreak/mastery 双计）。
+     *  startReview/nextReviewChar 换字时清空（每字每轮一次 ASSESS）。
+     *
+     *  一刀切限制的取舍：REINFORCE 阶段若出现 record_result(assess)，当前产品语义下
+     *  只可能是「ASSESS 阶段判题未当场落库的补记」——复习流程 RECALL→ASSESS→REINFORCE→NEXT
+     *  一轮一字只有一次判题（ASSESS 无证据无法 advance 到 REINFORCE，门禁保证），
+     *  REINFORCE 没有第二道真实新题。故同字同轮第二次 assess 一律视为重复记账拒绝。
+     *  若未来产品在 REINFORCE 引入真实新题（新 attempt 绑定新作答），需在此区分
+     *  「补记旧作答」与「新题新作答」（如按 attempt 是否为空/新幂等键判定），届时放宽。 */
+    private val assessRecordedForRound = mutableSetOf<String>()
 
     /** 作答完成标记（review-09 P1-4）：App 端判题选项点击即作答完成（对错由模型 record_result 裁决）。 */
     fun markAnswered() {
@@ -351,6 +366,7 @@ class ReplayRunner(
         if (reviewQueue.isEmpty()) return false
         reviewAnswered = false   // review-09 P1-4：下一复习字重新判题
         reviewAnsweredScore = null   // 残余修复：本地判题真值同步清（防跨字借用）
+        assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
         state = state.copy(char = reviewQueue.removeFirst(), reviewStage = ReviewStage.RECALL)
         return true
     }
@@ -755,9 +771,18 @@ class ReplayRunner(
                 rejectReasons += "record_result: 复习 REINFORCE 缺少本阶段本地作答证据"   // review-09 P1-9
                 return
             }
+            // 同字同轮 ASSESS 只允许落库一次——REINFORCE 补记 assess
+            // 是延迟落库容错（判题未当场落库），但同一作答已用 key A 落库后再用新 key B
+            // 补记 = 重复记账（同一作答裁决两次）。补记仅当该字该轮尚未落库过 assess
+            // （REINFORCE 无真实新题：一轮一字一次判题，见 assessRecordedForRound 注释）。
+            if (phase == "assess" && char in assessRecordedForRound) {
+                rejectedCalls += "record_result"
+                rejectReasons += "record_result: 该字该轮 ASSESS 已落库（同一作答不得重复记账）"
+                return
+            }
             val validPhase = when (state.reviewStage) {
                 ReviewStage.ASSESS -> phase == "assess"
-                ReviewStage.REINFORCE -> phase == "reinforce" || phase == "assess"
+                ReviewStage.REINFORCE -> phase == "reinforce" || phase == "assess"   // assess 仅补记容错（未落库过才放行）
                 else -> false
             }
             if (!validPhase) {
@@ -829,7 +854,10 @@ class ReplayRunner(
             adjustPromptLevel(phase, baseDim, finalRecord, ok)
         }
         // review-09 P1-4：复习轮判题/强化落库即证据（推进门禁用）
-        if (finalRecord != null && state.mode == Mode.REVIEW) reviewAnswered = true
+        if (finalRecord != null && state.mode == Mode.REVIEW) {
+            reviewAnswered = true
+            if (phase == "assess") assessRecordedForRound += char   // 本字本轮已记账
+        }
     }
 
     /** 最弱非零维度（复习轮裁决用，GT-053）。 */
@@ -876,9 +904,9 @@ class ReplayRunner(
         if (phase !in CANONICAL_PHASES) return false
         // 复习模式：落库 phase 必须是 assess（判题）或 reinforce（强化再学）（P2-C：注释承诺落地，review-08）
         if (state.mode == Mode.REVIEW && phase !in setOf("assess", "reinforce")) return false
-        // score 范围
+        // score 范围（NaN 与 0/1 比较恒 false，会绕过范围校验——必须显式拒绝）
         val score = (result["score"] as? Number)?.toDouble()
-        if (score != null && (score < 0.0 || score > 1.0)) return false
+        if (score != null && (!score.isFinite() || score < 0.0 || score > 1.0)) return false
         return true
     }
 

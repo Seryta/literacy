@@ -64,9 +64,10 @@ class ModelManager(context: Context) {
 
     private fun verify(dir: File, spec: VoiceModels.ModelSpec): Boolean {
         val marker = File(dir, ".verified")
-        val expected = markerContent(spec)
         // 缓存命中：标记存在且内容匹配 → 快路径（只确认清单文件存在+非空，不重算 84MB 哈希）
-        if (marker.isFile && marker.readTextOrNull() == expected) {
+        // marker 内容含各文件大小——非空但被截断/损坏的文件长度不符，
+        // 快路径失效走完整哈希（此前只查非空，损坏文件会绕过哈希直接进 JNI）
+        if (marker.isFile && marker.readTextOrNull() == markerContent(spec, dir)) {
             // review-09 P1-05：快路径至少确认清单文件存在+非空（标记残留时缺失/损坏模型不得进入 JNI）
             val filesExist = spec.files.all { (path, _) ->
                 val f = File(dir, path.substringAfterLast('/'))
@@ -78,12 +79,13 @@ class ModelManager(context: Context) {
             val f = File(dir, path.substringAfterLast('/'))
             f.isFile && f.length() > 0 && sha256(f).equals(sha, ignoreCase = true)
         }
-        if (ok) marker.writeText(expected)   // 校验通过写缓存标记
+        if (ok) marker.writeText(markerContent(spec, dir))   // 校验通过写缓存标记（记录当时各文件大小）
         return ok
     }
 
-    private fun markerContent(spec: VoiceModels.ModelSpec): String =
-        spec.files.joinToString("|") { (p, s) -> "$p:$s" }
+    /** 标记内容：路径:哈希:文件大小——快路径按长度比对（长度不符 = 文件损坏/被改 → 完整哈希）。 */
+    private fun markerContent(spec: VoiceModels.ModelSpec, dir: File): String =
+        spec.files.joinToString("|") { (p, s) -> "$p:$s:${File(dir, p.substringAfterLast('/')).length()}" }
 
     private fun File.readTextOrNull(): String? = try {
         if (length() > 4096) null else readText()

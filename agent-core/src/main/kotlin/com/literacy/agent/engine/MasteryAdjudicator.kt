@@ -72,10 +72,20 @@ class MasteryAdjudicator {
         // - 学习门槛（current<3）：连续达标成功累计（同 session 连续算，L1-L2/L2-L3 升级语义不变）
         // - L3→L4（current==3，须 isReview）：按间隔日累计——同日多次复习保留链不清零不累计
         //   （防同轮多 key 凑三次间隔）；跨日复习才 +1
+        // 间隔日判定按维度（gateStreakDate*）——lastReview 是整字共享，
+        // 同日先 RECOGNIZE 后 WRITE 复习会误伤（WRITE 首日复习被当重复）；
+        // 改用本维度上次间隔累计日期：同日同维度复习保留链，首日/跨日累计
         val newGate = if (ok && qualifies(current, promptLevel, isReview)) {
-            if (current == 3 && record.lastReview == today) record.gateStreak(dim)   // 同日 L3 复习：保留链
+            if (current == 3 && record.gateStreakDate(dim) == today) record.gateStreak(dim)   // 同日同维度复习：保留链
             else record.gateStreak(dim) + 1
         } else 0
+        // 间隔基准日期：累计时记今天；保留链时不动；链被打断（归零）时清空——
+        // 否则“同日失败后再次成功”会被残留日期误当同日重复不累计
+        val gateDate = when {
+            newGate == 0 -> null
+            newGate > record.gateStreak(dim) -> today   // 首次/跨日累计
+            else -> record.gateStreakDate(dim)          // 同日保留链
+        }
 
         val next = when {
             ok -> upgrade(withStreak, newGate, dim, current, promptLevel, isReview)
@@ -90,9 +100,9 @@ class MasteryAdjudicator {
         // 它是起步不是门槛达标，清零会破坏"两次 L1 升初步掌握"的连续计数
         val singleLevel = singleAttemptLevel(dim, promptLevel)
         val final = if (next > current && next > singleLevel) {
-            updated.withGateStreak(dim, 0).withStreak(dim, 0, 0)   // 门槛升级后达标链清零
+            updated.withGateStreak(dim, 0).withGateStreakDate(dim, null).withStreak(dim, 0, 0)   // 门槛升级后达标链清零
         } else {
-            updated.withGateStreak(dim, newGate)   // 达标链随记录保存（持久化）
+            updated.withGateStreak(dim, newGate).withGateStreakDate(dim, gateDate)   // 达标链随记录保存（持久化）
         }
         return final.copy(status = final.deriveStatus())
     }

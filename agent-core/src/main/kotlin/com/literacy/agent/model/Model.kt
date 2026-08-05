@@ -186,6 +186,13 @@ data class CharacterRecord(
     val gateStreakWrite: Int = 0,
     val gateStreakUnderstand: Int = 0,
     val gateStreakApply: Int = 0,
+    // 各维度上次间隔累计的日期（随 gateStreak 持久化）——
+    // lastReview 是整字共享，同日先 RECOGNIZE 后 WRITE 复习会被误当重复不累计；
+    // 按维度记录后跨维度互不误伤（L3→L4 间隔日判定只认本维度上次达标日）
+    val gateStreakDateRecognize: String? = null,
+    val gateStreakDateWrite: String? = null,
+    val gateStreakDateUnderstand: String? = null,
+    val gateStreakDateApply: String? = null,
     val commonMistakes: List<String> = emptyList(),
     val source: String? = null,
     // SM-2 参数（按最弱维度计算，MASTERY-CRITERIA §5）
@@ -246,6 +253,22 @@ data class CharacterRecord(
         Dimension.WRITE -> copy(gateStreakWrite = n)
         Dimension.UNDERSTAND -> copy(gateStreakUnderstand = n)
         Dimension.APPLY -> copy(gateStreakApply = n)
+    }
+
+    /** 该维度上次间隔累计日期（间隔日判定按维度，不共享整字 lastReview）。 */
+    fun gateStreakDate(dim: Dimension): String? = when (dim) {
+        Dimension.RECOGNIZE -> gateStreakDateRecognize
+        Dimension.WRITE -> gateStreakDateWrite
+        Dimension.UNDERSTAND -> gateStreakDateUnderstand
+        Dimension.APPLY -> gateStreakDateApply
+    }
+
+    /** 该维度间隔累计日期写入（null = 链被打断/重置，下次成功重新起算）。 */
+    fun withGateStreakDate(dim: Dimension, date: String?): CharacterRecord = when (dim) {
+        Dimension.RECOGNIZE -> copy(gateStreakDateRecognize = date)
+        Dimension.WRITE -> copy(gateStreakDateWrite = date)
+        Dimension.UNDERSTAND -> copy(gateStreakDateUnderstand = date)
+        Dimension.APPLY -> copy(gateStreakDateApply = date)
     }
 
     /** 任一维度存在连续失败计数（复习队列"最近出错"判定，SESSION-LIFECYCLE §1.2）。 */

@@ -400,4 +400,80 @@ class ReplayRunnerTest {
         assertEquals(1, runner.store.results.size)
         assertEquals("reinforce", runner.store.results.single().phase)
     }
+
+    // ---- 同字同轮 ASSESS 重复记账拒绝（key A 落库后新 key 补记不得再裁决）----
+
+    @Test
+    fun `ASSESS 已落库后 REINFORCE 用新 key 补记 assess 被拒（防重复记账）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 本地判题（reviewAnswered 置位）
+        // 模型在 ASSESS 当场落库（key A）
+        llmRecordResult(runner, "rev-key-A", phase = "assess")
+        assertFalse(runner.rejectedCalls.contains("record_result"))
+        assertEquals(1, runner.store.results.size)
+        // App 层 advanceReview：新幂等键 + attempt 清空 → 推进到 REINFORCE
+        runner.configureState(runner.state.copy(
+            attempt = null,
+            idempotencyKey = "rev-key-B",
+        ))
+        runner.advanceReview()   // assess → reinforce
+        // 模型用新 key 补记同一次判题 → 同一作答不得重复记账
+        llmRecordResult(runner, "rev-key-B", phase = "assess")
+        assertTrue(runner.rejectedCalls.contains("record_result"), "同字同轮 ASSESS 已落库，新 key 补记必须拒绝")
+        assertEquals(1, runner.store.results.size, "重复记账不得再落一行")
+        assertTrue(runner.rejectReasons.any { it.contains("已落库") })
+    }
+
+    @Test
+    fun `ASSESS 阶段同字重复落库也拒绝（同轮只允许一次判题记账）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")
+        llmRecordResult(runner, "rev-key-A", phase = "assess")
+        assertFalse(runner.rejectedCalls.contains("record_result"))
+        // 同一 ASSESS 阶段再落一次（不同 key）——同轮同字只允许一次判题
+        llmRecordResult(runner, "rev-key-A2", phase = "assess")
+        assertTrue(runner.rejectedCalls.contains("record_result"), "ASSESS 阶段同字重复记账必须拒绝")
+        assertEquals(1, runner.store.results.size)
+    }
+
+    @Test
+    fun `补记 assess 仍允许（该字该轮未落库过——review-10 P1-3 容错不破坏）`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.reviewQueue.add("家")
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 本地判题（reviewAnswered 置位）
+        runner.configureState(runner.state.copy(attempt = null))
+        runner.advanceReview()   // assess → reinforce
+        // 未落库过的补记（GT-053 延迟落库）：仍放行
+        llmRecordResult(runner, "rev-backfill", phase = "assess")
+        assertFalse(runner.rejectedCalls.contains("record_result"), "未落库过的补记 assess 仍应放行")
+        assertEquals(1, runner.store.results.size)
+        assertEquals("assess", runner.store.results.single().phase)
+    }
+
+    // ---- score NaN 拒绝（NaN 与 0/1 比较恒 false 绕过范围校验）----
+
+    @Test
+    fun `score NaN 被 record_result 校验拒绝`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.configureState(runner.state.copy(
+            idempotencyKey = "app-key-nan",
+            attempt = com.literacy.agent.model.AttemptContext(
+                phase = "recognize", score = 1.0, dimension = com.literacy.agent.model.Dimension.RECOGNIZE, promptLevel = 0,
+            ),
+        ))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "recognize", "score" to Double.NaN, "prompt_level" to "none", "idempotency_key" to "app-key-nan"),
+        )))))
+        assertTrue(runner.rejectedCalls.contains("record_result"), "NaN 分数必须拒绝（不进裁决/落库）")
+        assertEquals(0, runner.store.results.size)
+    }
 }

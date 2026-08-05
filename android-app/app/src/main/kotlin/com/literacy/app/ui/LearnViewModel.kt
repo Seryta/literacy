@@ -98,6 +98,7 @@ class LearnViewModel(
         orchestrator.cancelInFlight()
         httpTransport.cancelActive()
         speakJob?.cancel()   // 残余修复：离页取消离线 TTS 协程（不重播旧教学语/不并发）
+        com.literacy.app.ui.voice.VoiceHub.offline.cancelSpeak()   // 在途 native generate 完成后不播放
         releaseTts()
         super.onCleared()
     }
@@ -145,6 +146,7 @@ class LearnViewModel(
         httpTransport.cancelActive()
         speakJob?.cancel()   // 残余修复：离页取消在途离线 TTS
         speakJob = null
+        com.literacy.app.ui.voice.VoiceHub.offline.cancelSpeak()   // 在途 native generate 完成后不播放
         currentJob?.cancel()
         currentJob = null
     }
@@ -282,6 +284,9 @@ class LearnViewModel(
     }
 
     private fun speakCurrent() {
+        // 离页（cancelInFlight 置位）后不重新朗读——submit 的 finally 会
+        // refreshUi，若 Activity 级 VM 仍存活，旧朗读不得在离页后被重启
+        if (orchestrator.cancelled) return
         // P1-13：TTS 用过滤后的文本（越界内容过滤后再朗读，见 AgentOrchestrator.ttsText）
         // review-09 P2-5：sessionEnded 也朗读（结束话术是最后教学输出——此前被 !sessionEnded 永远跳过）
         val text = orchestrator.ttsText ?: ui.text
@@ -293,15 +298,21 @@ class LearnViewModel(
                 // 残余修复：串行化 + 页面生命周期——新 speak 取消旧任务；离页（onCleared）取消
                 speakJob?.cancel()
                 speakJob = viewModelScope.launch {
+                    // 播放代次——speakJob.cancel 不中断同步 native generate，
+                    // 旧任务可能在新任务之后才生成完；引擎按代次在播放前校验，旧音频不盖新音频
+                    val gen = com.literacy.app.ui.voice.VoiceHub.offline.nextSpeakGeneration()
                     val ok = withContext(Dispatchers.IO) {
-                        try { com.literacy.app.ui.voice.VoiceHub.offline.speak(text) }
+                        try { com.literacy.app.ui.voice.VoiceHub.offline.speak(text, gen) }
                         catch (e: Exception) { false }
                     }
                     if (ok) {
-                        // 离线播放即视为教学语已播（App 端持续自动听，开麦时机近似即可）
+                        // 离线 TTS 语义：speak 返回 = 生成完成 + 播放已启动
+                        // （AudioTrack MODE_STATIC 异步播放，无完成回调；教学语播完前开麦近似即可——
+                        // App 端学习页持续自动听，onTtsCompleted 仅作 runner 的 listen 预约信号，
+                        // 与系统 TTS onDone（真播放完成）存在时序差异，但不影响实际开麦门禁）
                         orchestrator.onTtsCompleted()
-                    } else {
-                        speakSystem(text)   // 离线生成/播放失败 → 系统 TTS 兜底
+                    } else if (gen == com.literacy.app.ui.voice.VoiceHub.offline.currentSpeakGeneration()) {
+                        speakSystem(text)   // 真实失败（代次未变）→ 系统 TTS 兜底；被新朗读/取消取代（代次已变）不重播旧文本
                     }
                 }
                 return

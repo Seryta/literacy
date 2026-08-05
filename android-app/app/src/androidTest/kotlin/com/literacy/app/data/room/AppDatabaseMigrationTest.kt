@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -65,9 +66,9 @@ class AppDatabaseMigrationTest {
         // 2) 真实 migration 1→2（唯一索引由 migration 创建；validateDroppedTables=true 校验 schema）
         helper.runMigrationsAndValidate(TEST_DB, 2, true, AppDatabase.MIGRATION_1_2).close()
 
-        // 3) 迁移后开新版本库：数据全部保留（当前 Room 版本 5，需注册 2→3/3→4/4→5）
+        // 3) 迁移后开新版本库：数据全部保留（当前 Room 版本 6，需注册 2→3/3→4/4→5/5→6）
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         val dao = db.learningDao()
         assertEquals(1, dao.getAllResults().size)
@@ -129,7 +130,7 @@ class AppDatabaseMigrationTest {
 
         // 3) 去重结果：同 key 只留最早一行（全局索引约束）
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         val rows = db.learningDao().getAllResults()
         assertEquals(1L, rows.size.toLong())
@@ -183,12 +184,12 @@ class AppDatabaseMigrationTest {
         }
 
         // 2) 真实 migration 2→3（validateDroppedTables=true：建新表流程后 schema 与实体精确一致）
-        // review-10 P0：Room 当前版本 5——校验目标 5，迁移链 2→3→4→5（3_4 索引替换、4_5 全局索引+新列）
-        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).close()
+        // review-10 P0：Room 当前版本 6——校验目标 6，迁移链 2→3→4→5→6（3_4 索引替换、4_5 全局索引+新列、5_6 间隔日期列）
+        helper.runMigrationsAndValidate(TEST_DB, 6, true, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6).close()
 
         // 3) 迁移后：数据保留 + 旧 streak 迁移语义
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         val dao = db.learningDao()
         assertEquals(3, dao.getAllCharacters().size)   // 三字全部保留
@@ -234,10 +235,10 @@ class AppDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).close()
+        helper.runMigrationsAndValidate(TEST_DB, 6, true, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6).close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         val rows = db.learningDao().getAllResults()
         assertEquals("v3 数据迁移保留", 2L, rows.size.toLong())
@@ -285,10 +286,10 @@ class AppDatabaseMigrationTest {
         }
 
         // 2) 真实 migration 4→5
-        helper.runMigrationsAndValidate(TEST_DB, 5, true, AppDatabase.MIGRATION_4_5).close()
+        helper.runMigrationsAndValidate(TEST_DB, 6, true, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6).close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
-            .addMigrations(AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         val dao = db.learningDao()
         // 数据保留；同 key 去重（v4 时代同 key 换 phase 的双计行保留最早一条）
@@ -310,6 +311,48 @@ class AppDatabaseMigrationTest {
         val saved = dao.getCharacter("家")!!
         assertEquals(2, saved.gateStreakRecognize)
         assertEquals(1, saved.gateStreakWrite)
+        db.close()
+    }
+
+    /**
+     * v5→v6：characters 增加 gateStreakDate 四列（各维度上次间隔累计日期）。
+     * lastReview 整字共享会跨维度误伤（同日先 RECOGNIZE 后 WRITE 复习被当重复不累计）——
+     * 按维度记录后 L3→L4 间隔日判定只认本维度上次达标日。旧行 NULL（无间隔基准）正常起算。
+     */
+    @Test
+    fun migrate5To6_addsGateStreakDateColumns_preservesData() {
+        // 1) 建 v5 库 + 灌数据（v5 无 gateStreakDate 列）
+        helper.createDatabase(TEST_DB, 5).apply {
+            execSQL(
+                "INSERT INTO characters (char, pinyin, masteryRecognize, masteryWrite, masteryUnderstand, " +
+                    "masteryApply, status, currentPromptLevel, streakRecognizeSuccess, streakRecognizeErrors, " +
+                    "streakWriteSuccess, streakWriteErrors, streakUnderstandSuccess, streakUnderstandErrors, " +
+                    "streakApplySuccess, streakApplyErrors, gateStreakRecognize, gateStreakWrite, " +
+                    "gateStreakUnderstand, gateStreakApply, commonMistakes, easeFactor, intervalDays) " +
+                    "VALUES ('家', 'jiā', 3, 3, 1, 0, 'mastered', 3, 2, 0, 1, 0, 0, 0, 0, 0, 2, 1, 0, 0, '[]', 2.5, 7)",
+            )
+            close()
+        }
+
+        // 2) 真实 migration 5→6（目标 6：Room 当前版本）
+        helper.runMigrationsAndValidate(TEST_DB, 6, true, AppDatabase.MIGRATION_5_6).close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, TEST_DB)
+            .addMigrations(AppDatabase.MIGRATION_5_6)
+            .build()
+        val dao = db.learningDao()
+        // 数据保留；新列默认 NULL（旧行无间隔基准，首次/跨日复习正常累计）
+        val rec = dao.getCharacter("家")!!
+        assertEquals(3, rec.masteryRecognize)
+        assertEquals("既有达标链保留", 2, rec.gateStreakRecognize)
+        assertEquals(1, rec.gateStreakWrite)
+        assertNull(rec.gateStreakDateRecognize)
+        assertNull(rec.gateStreakDateWrite)
+        // 间隔日期写入后可读回（持久化生效）
+        dao.upsertCharacter(rec.copy(gateStreakDateRecognize = "2026-08-05", gateStreakDateWrite = "2026-08-05"))
+        val saved = dao.getCharacter("家")!!
+        assertEquals("2026-08-05", saved.gateStreakDateRecognize)
+        assertEquals("2026-08-05", saved.gateStreakDateWrite)
         db.close()
     }
 }

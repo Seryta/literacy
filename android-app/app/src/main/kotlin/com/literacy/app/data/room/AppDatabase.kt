@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 /** App 学习数据库（characters/sessions/session_character_results/name_plan）。 */
 @Database(
     entities = [CharacterEntity::class, SessionEntity::class, SessionResultEntity::class, NamePlanEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,   // androidTest 迁移测试需要 schema JSON（app/schemas）
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -80,6 +80,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v5→v6：characters 增加 gateStreakDate 四列（各维度上次间隔累计日期——
+         *  lastReview 整字共享会跨维度误伤：同日先 RECOGNIZE 后 WRITE 复习被当重复不累计；
+         *  按维度记录后 L3→L4 间隔日判定只认本维度上次达标日）。
+         *  旧行默认为 NULL（无间隔基准）——首次/跨日复习正常累计，不受影响。 */
+        internal val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakDateRecognize TEXT")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakDateWrite TEXT")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakDateUnderstand TEXT")
+                db.execSQL("ALTER TABLE characters ADD COLUMN gateStreakDateApply TEXT")
+            }
+        }
+
         internal val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(
@@ -127,7 +140,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "literacy.db",
                 )
                     // P1-5：v1→v2 加 idempotency_key 唯一索引——真实 migration（不清数据）
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { instance = it }
             }
     }

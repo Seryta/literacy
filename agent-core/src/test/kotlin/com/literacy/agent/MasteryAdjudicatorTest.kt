@@ -249,10 +249,49 @@ class MasteryAdjudicatorTest {
         var rec = CharacterRecord("家", masteryRecognize = 3, lastReview = "2026-08-04")
         rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-05")
         assertEquals(1, rec.gateStreakRecognize)
-        // 同日第二次（lastReview 已被置 today 的 reinforce 路径）：保留链不清零
+        // 同日第二次（间隔基准已置 today 的 reinforce 路径）：保留链不清零
         rec = rec.copy(lastReview = "2026-08-05")
         rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-05")
         assertEquals(1, rec.gateStreakRecognize, "同日复习保留链（不累计不清零）")
         assertEquals(3, rec.masteryRecognize, "同日重复作答不能把 L3 抬到 L4")
+    }
+
+    // ---- 间隔日判定按维度（lastReview 整字共享不再误伤跨维度）----
+
+    @Test
+    fun `同日先 RECOGNIZE 后 WRITE 复习各自独立累计（跨维度不误伤）`() {
+        val adj = MasteryAdjudicator()
+        val today = "2026-08-05"
+        var rec = CharacterRecord("家", masteryRecognize = 3, masteryWrite = 3)   // 两维度都 L3（稳定掌握）
+        // 同日先 RECOGNIZE 复习：累计 1，间隔基准记今天
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = today)
+        assertEquals(1, rec.gateStreakRecognize)
+        // 同日 WRITE 复习：本维度首次（间隔基准为空），不得被 RECOGNIZE 的日期误当重复（旧 lastReview 误伤）
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0, isReview = true, today = today)
+        assertEquals(1, rec.gateStreakWrite, "WRITE 首次间隔复习必须累计（不被 RECOGNIZE 同日复习误伤）")
+        assertEquals(1, rec.gateStreakRecognize, "RECOGNIZE 链不受 WRITE 影响")
+        // 次日再复习两维度：各自 +1（三次间隔各自独立累计）
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-06")
+        rec = adj.adjudicate(rec, Dimension.WRITE, ok = true, promptLevel = 0, isReview = true, today = "2026-08-06")
+        assertEquals(2, rec.gateStreakRecognize)
+        assertEquals(2, rec.gateStreakWrite)
+    }
+
+    @Test
+    fun `同日失败重置后再次成功正常累计（间隔基准随链归零清空）`() {
+        val adj = MasteryAdjudicator()
+        val today = "2026-08-05"
+        var rec = CharacterRecord("家", masteryRecognize = 3)
+        // 首次间隔复习成功：累计 1，基准今天
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = today)
+        assertEquals(1, rec.gateStreakRecognize)
+        assertEquals(today, rec.gateStreakDateRecognize)
+        // 同日失败：链归零 + 基准清空（残留日期不得把后续成功误当同日重复）
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = false, promptLevel = 4, isReview = true, today = today)
+        assertEquals(0, rec.gateStreakRecognize)
+        assertEquals(null, rec.gateStreakDateRecognize, "链归零时间隔基准必须清空")
+        // 同日再次成功：从 1 重新起算（不是被残留日期挡住）
+        rec = adj.adjudicate(rec, Dimension.RECOGNIZE, ok = true, promptLevel = 0, isReview = true, today = today)
+        assertEquals(1, rec.gateStreakRecognize, "重置后同日成功正常累计")
     }
 }

@@ -1,12 +1,43 @@
-reviews/
+# ── 构建产物 ──
 agent-core/build/
 agent-core/.gradle/
 agent-core/.kotlin/
-.agent/
-provider-config.json
 android-app/.gradle/
 android-app/.kotlin/
 android-app/app/build/
 android-app/local.properties
-android_components/
 gradle-cache/
+android_components/
+
+# ── 本地协调 / 评审（不进 git）──
+.agent/
+reviews/
+
+# ── 本地配置 / 密钥 ──
+provider-config.json
+.env
+.env.*
+
+# ── AI agent 工具配置（trae / claude / cursor / codex 等，多 agent 并行开发时防误提交）──
+.trae/
+.idea/
+.vscode/
+.claude/
+.cursor/
+.codex/
+.agents/
+.windsurf/
+.cline/
+.roo/
+.fleet/
+.eclipse/
+*.iml
+
+# ── OS / 编辑器杂项 ──
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log

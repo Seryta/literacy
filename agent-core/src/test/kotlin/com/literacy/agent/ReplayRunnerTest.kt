@@ -756,6 +756,49 @@ class ReplayRunnerTest {
         assertEquals("guided_write", learn.lastWritingEval?.phase)
     }
 
+    /** W4：复习 REINFORCE 逐笔成功必须累计 completedStrokes——App 侧 strokeIdx =
+     *  completedStrokes+1 据此传对参考笔画索引；不累计则第 2 笔起恒对照参考 #1 评估。 */
+    @Test
+    fun `复习 REINFORCE 逐笔累计笔画数，第 2 笔对照参考 2 评估`() {
+        val fake = object : com.literacy.agent.data.HanziDataSource {
+            override fun find(char: String): com.literacy.agent.data.HanziInfo? = null
+            override fun strokeCount(char: String): Int = 2
+            override fun referenceStrokes(char: String): List<List<com.literacy.agent.model.StrokePoint>>? = listOf(
+                listOf(com.literacy.agent.model.StrokePoint(0f, 0f), com.literacy.agent.model.StrokePoint(100f, 100f)),    // #1：45° 对角
+                listOf(com.literacy.agent.model.StrokePoint(0f, 100f), com.literacy.agent.model.StrokePoint(100f, 0f)),   // #2：135° 对角
+            )
+        }
+        val runner = ReplayRunner(hanziRepository = fake).startSession("家")
+        runner.reviewQueue.addAll(listOf("家"))
+        runner.startReview()
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 判题证据（放行 REINFORCE 门禁）
+        runner.advanceReview()   // assess → reinforce
+        // 第 1 笔：模拟 App 层 strokeIdx = completedStrokes+1 = 1，画参考 #1 → 成功并累计
+        runner.onStrokeFinished(runner.completedStrokes + 1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 0f),
+            com.literacy.agent.model.StrokePoint(100f, 100f),
+        ))
+        assertEquals("reinforce", runner.lastWritingEval?.phase)
+        assertTrue(runner.completedStrokes == 1, "REINFORCE 逐笔成功必须累计（修复前恒 0，App 侧 strokeIdx 恒 1）")
+        // 第 2 笔：strokeIdx = completedStrokes+1 = 2，画参考 #2（135°）→ 必须对照参考 #2 判成功；
+        // 修复前 strokeIdx 恒 1 会对照参考 #1（90° 角差）判失败
+        runner.onStrokeFinished(runner.completedStrokes + 1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 100f),
+            com.literacy.agent.model.StrokePoint(100f, 0f),
+        ))
+        assertTrue(runner.lastWritingEval?.ok == true, "第 2 笔必须对照参考 #2 评估（此前恒对照参考 #1 误判失败）")
+        assertEquals(2, runner.completedStrokes)
+        // 学习轮 GUIDED_WRITE 累计不受影响：仅复习轮新增累计
+        val learn = ReplayRunner(hanziRepository = fake).startSession("家")
+        learn.configureState(learn.state.copy(phase = Phase.GUIDED_WRITE, allowedActions = com.literacy.agent.replay.ReplayRunner.allowedFor(Phase.GUIDED_WRITE)))
+        learn.onStrokeFinished(1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 0f),
+            com.literacy.agent.model.StrokePoint(100f, 100f),
+        ))
+        assertEquals(1, learn.completedStrokes)
+    }
+
     @Test
     fun `复习换字读新字自己的提示等级（不沿用旧字）`() {
         val runner = ReplayRunner().startSession("旧")

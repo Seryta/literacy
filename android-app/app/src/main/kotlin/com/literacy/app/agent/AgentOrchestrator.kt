@@ -390,8 +390,6 @@ class AgentOrchestrator(
      *  作答后 currentExercise 已清空但旧题仍在 recentUiTools，无条件重提会让旧题复活可再点；
      *  消费记录让提取跳过旧题（新题出现时旧记录作废）。 */
     private val consumedExerciseIds = mutableSetOf<String>()
-    private val fallbackExerciseIds = java.util.IdentityHashMap<com.literacy.agent.model.ToolCall, String>()
-    private var fallbackExerciseSequence = 0L
 
     private fun reviewResultPhase(): String? = when {
         runner.state.mode != com.literacy.agent.model.Mode.REVIEW -> null
@@ -405,7 +403,6 @@ class AgentOrchestrator(
         lastExerciseType = null
         currentExercise = null
         consumedExerciseIds.clear()
-        fallbackExerciseIds.clear()
     }
 
     /** review-11 P1-1.4：本地选择题真值——show_options 执行后提取（选项 + 题目 id + 正确答案=当前字）。
@@ -424,7 +421,13 @@ class AgentOrchestrator(
         if (cancelled) return
         val producedBefore = runner.producedEvents.size
         val stateBeforeTools = runner.state
-        val uiToolsBefore = runner.recentUiTools.size   // P2-7：只处理本 turn 新执行的 UI tool（避免每轮重扫完整历史重洗牌）
+        // W3：快照（身份引用）而非旧尺寸——同轮 complete_character 会清 recentUiTools 再
+        // 追加下一字新题，按尺寸 drop 会把新题误丢（永不渲染）；按身份 dropWhile 只丢
+        // 本 turn 前已存在的工具，中途 clear 自愈。⚠ ToolCall 是 data class（值相等），
+        // 不能 List.contains 值比较（同值新工具如 exercise_id 同为 null 会被误当旧工具丢）；
+        // IdentityHashMap 才是身份比较
+        val uiToolsBefore = java.util.IdentityHashMap<com.literacy.agent.model.ToolCall, Boolean>()
+        runner.recentUiTools.forEach { uiToolsBefore[it] = true }   // P2-7：只处理本 turn 新执行的 UI tool（避免每轮重扫完整历史重洗牌）
         val output = try {
             provider.respond(buildContext(event))
         } catch (e: Exception) {
@@ -460,7 +463,7 @@ class AgentOrchestrator(
         // 选项一律本地生成（当前字 + 字库校验的干扰字）——不依赖模型 options 参数，标准调用也能出题
         // P2-7：只取本轮新增工具——旧题（recentUiTools 历史）不每轮重扫：同 ID 无新 ToolCall
         // 时保留现有题目快照不重新洗牌（按钮不跳位）
-        runner.recentUiTools.drop(uiToolsBefore).lastOrNull { it.name == "show_options" }?.let { tool ->
+        runner.recentUiTools.dropWhile { uiToolsBefore.containsKey(it) }.lastOrNull { it.name == "show_options" }?.let { tool ->
             val rawExId = tool.arguments["exercise_id"]?.toString()
             val exId = rawExId?.takeIf { it.isNotBlank() }   // P2-7：空白 exercise_id 按缺失处理（走 fallback，不屏蔽后续空 ID 新题）
             // 本地生成选项：当前字 + 字库中可用的干扰字（不依赖模型 options）
@@ -468,12 +471,12 @@ class AgentOrchestrator(
             val distractors = DISTRACTOR_CHARS.filter { it != target && hanzi?.find(it) != null }.take(3)
             val opts = if (target.isNotEmpty()) listOf(target) + distractors else null
             if (!opts.isNullOrEmpty()) {
-                // 残余修复（验收 P1-2）：稳定 fallback ID——基于当前字 + 未洗牌选项集排序
+                // 残余修复（验收 P1-2 + W2）：稳定 fallback ID——基于当前字 + 未洗牌选项集排序
                 // （直接取 shuffled 哈希：每轮洗牌不同、同题 ID 漂移，消费检查失效）；
-                // 换字/换选项才变化，作答后同题不可复活
-                val stableHash = fallbackExerciseIds.getOrPut(tool) {
-                    "fallback-${++fallbackExerciseSequence}"
-                }
+                // 换字/换选项才变化，作答后同题不可复活。不得改用 ToolCall 对象序列号——
+                // 模型重发同一题即新对象，序列号漂移使消费拦截失效（无 exercise_id 的题
+                // 作答后复活回归，正是验收 P1-2 修的 bug）
+                val stableHash = "fallback-" + (target + "|" + opts.sorted().joinToString(",")).hashCode().toString()
                 // review-11 批A + 验收 P1-2：作答后旧题不得复活——原始 exId 与 fallback ID
                 // 都参与消费检查（fallback 题作答后同样一次性消费）；新题出现时旧记录作废
                 val consumedKey = exId ?: stableHash

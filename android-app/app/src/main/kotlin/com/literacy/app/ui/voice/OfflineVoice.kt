@@ -146,6 +146,14 @@ class OfflineVoiceEngine(
     // - sttLock：recognizer 的捕获/释放/重建与 startListening 串行（防 use-after-release）
     // 代次协调与轨道/恢复动作统一在 TtsPlaybackCoordinator / SttState 单锁内（P2-8：
     // 取消/最终代次检查/轨道发布/播放、捕获/取消/恢复判断互斥，测试接缝见 VoiceConcurrencyTest）
+    // ⚠ W5 锁序约束（全局恒序，禁止反转）：
+    //   sttLock → sttState.lock。启动路径 startListening 先拿 sttLock 再 sttState.start；
+    //   initStt 恢复块（synchronized(sttLock) 内调 restoreIfCurrent → action 内再进
+    //   startListening）是 sttLock 可重入，不构成反转——当前安全仅依赖「恢复恒在
+    //   synchronized(sttLock) 作用域内」。若未来把恢复块移出该作用域，必须同时把
+    //   restoreIfCurrent 的 action 改为 sttState 锁外调度（启动动作前保持代次复检防
+    //   「恢复覆盖取消」竞态回归），否则恢复路径变成 sttState.lock → sttLock，与启动
+    //   路径 AB-BA 反转成死锁。
     private val ttsLock = Any()
     private val sttLock = Any()
     private val playback = TtsPlaybackCoordinator()
@@ -274,10 +282,16 @@ class OfflineVoiceEngine(
         }
         // 最终代次检查 + 轨道发布/播放统一在协调器锁内（P2-8）：cancel 先拿锁→不发布；
         // 本方法先拿锁发布→cancel 的 stopLocked 停掉已发布轨道（两交错均有测试锁定）
-        return playback.publishIfCurrent(generation) {
+        // W1：publishIfCurrent 返回 false（代次已在 PCM 转换/建轨/写缓冲窗口内被取消/取代）
+        // 时，track 从未交给 audioTrack 字段（stopLocked 不会释放它）——必须就地释放，
+        // 否则 MODE_STATIC 大缓冲 AudioTrack 泄漏（publishIfCurrent docstring 承诺
+        // "调用方负责释放轨道"，此处的调用方就是 play）
+        val published = playback.publishIfCurrent(generation) {
             audioTrack = track
             track.play()
         }
+        if (!published) track.release()
+        return published
     }
 
     // ── STT（流式 zipformer 中文识别）─────────────────────────────

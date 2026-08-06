@@ -23,13 +23,14 @@ class AgentOrchestratorTest {
         ToolCall("show_options", mapOf("exercise_id" to null)),
     ))
 
-    /** 缺 exercise_id 时，同一工具调用稳定；同字后续新调用必须获得新 ID。 */
+    /** 验收 P1-2 + W2：缺 exercise_id 时 fallback ID 稳定（不随洗牌/对象身份漂移），作答后一次性消费（旧题不复活）。 */
     @Test
-    fun `缺 exercise_id 的同字后续题使用新 ID`() {
+    fun `缺 exercise_id 的题目 fallback ID 稳定且作答后不复活`() {
         val orchestrator = AgentOrchestrator(
             provider = ScriptedLlmProvider(listOf(
                 showOptionsScript(),   // 第 1 轮出题（无 exId）
-                showOptionsScript(),   // 第 2 轮是新的工具调用，应视为新题
+                showOptionsScript(),   // 第 2 轮出题（未作答——同题应得相同 fallback ID）
+                showOptionsScript(),   // 第 3 轮出题（已作答——不得复活）
             )),
             store = InMemoryStore(),
         )
@@ -40,10 +41,15 @@ class AgentOrchestratorTest {
         assertNotNull("fallback 题必须有稳定 ID", firstId)
         val options = orchestrator.currentExercise?.options
         assertNotNull("fallback 题必须生成本地选项", options)
-        // 第 2 轮：即使同字同选项，新 show_options 仍是合法新题
+        // 第 2 轮：同字同选项再出题（未作答）——fallback ID 必须稳定（不随洗牌漂移；
+        // 模型重发同一题是新 ToolCall 对象，不得按对象序列号换新 ID）
         orchestrator.userSpoke("嗯", forcedIntent = VoiceIntent.OTHER)
-        org.junit.Assert.assertNotEquals("新工具调用必须获得新 fallback ID", firstId, orchestrator.lastExerciseId)
-        assertNotNull("同字后续合法题不得被消费记录屏蔽", orchestrator.currentExercise)
+        assertEquals("同题 fallback ID 必须稳定（不随洗牌/对象身份漂移）", firstId, orchestrator.lastExerciseId)
+        // 作答：点击选项 → 一次性消费（effectiveId 进 consumedExerciseIds）
+        orchestrator.button(options!!.first())
+        // 第 3 轮：模型又出同一题 → 已消费，不得复活
+        orchestrator.userSpoke("嗯", forcedIntent = VoiceIntent.OTHER)
+        assertNull("已作答的 fallback 题不得复活", orchestrator.currentExercise)
     }
 
     /** 验收 P1-2 边界：换字后新题 fallback ID 变化（消费记录不误伤新字题目）。 */
@@ -211,11 +217,36 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun `同轮 complete_character 与下一字 show_options 不丢新题（W3）`() {
+        // 模型在同一响应里 complete_character（清 recentUiTools）+ 下一字 show_options：
+        // 按旧尺寸 drop 会把同轮新题误丢（永不渲染）；快照 + 按身份 dropWhile 必须保留新题
+        val orchestrator = AgentOrchestrator(
+            provider = ScriptedLlmProvider(listOf(
+                showOptionsScript(),   // 第 1 轮旧字出题（旧题在 recentUiTools）
+                LlmOutput("完成并出题", listOf(
+                    ToolCall("complete_character"),
+                    ToolCall("show_options", mapOf("exercise_id" to null)),
+                )),   // 第 2 轮：同响应完成 + 下一字新题
+                LlmOutput("继续", emptyList()),   // complete_character 后的递归决策轮
+            )),
+            store = InMemoryStore(),
+        )
+        orchestrator.startSession("家", greet = false)
+        orchestrator.userSpoke("嗯", forcedIntent = VoiceIntent.OTHER)   // 第 1 轮出题（旧题）
+        assertNotNull("第 1 轮必须出题", orchestrator.currentExercise)
+        orchestrator.jumpTo(com.literacy.agent.model.Phase.DECIDE)
+        orchestrator.characterCompleted()   // 第 2 轮：complete_character + 新字 show_options
+        assertNotNull("同轮 complete_character 后新字 show_options 必须渲染（不得被尺寸 drop 误丢）", orchestrator.currentExercise)
+        assertTrue("新题 ID 必须是 fallback（无 exercise_id）", orchestrator.lastExerciseId?.startsWith("fallback-") == true)
+    }
+
+    @Test
     fun `空白 exercise_id 按缺失处理走 fallback`() {
         val orchestrator = AgentOrchestrator(
             provider = ScriptedLlmProvider(listOf(
                 LlmOutput("出题", listOf(ToolCall("show_options", mapOf("exercise_id" to "")))),
                 LlmOutput("出题2", listOf(ToolCall("show_options", mapOf("exercise_id" to "")))),
+                LlmOutput("出题3", listOf(ToolCall("show_options", mapOf("exercise_id" to "")))),
             )),
             store = InMemoryStore(),
         )
@@ -225,10 +256,14 @@ class AgentOrchestratorTest {
         assertNotNull("空白 ID 必须有 fallback 题", id1)
         assertTrue("空白 exercise_id 必须按缺失走 fallback（不以空串当合法 ID）", id1!!.startsWith("fallback-"))
         assertNotNull(orchestrator.currentExercise)
-        // 同字后续新调用：空 ID 旧题不屏蔽新题（此前空串被当合法 ID 永久屏蔽）
+        // 同字同选项未作答的空 ID 题：fallback ID 稳定（同题同 ID，不随对象身份漂移）且不被屏蔽
         orchestrator.userSpoke("嗯", forcedIntent = VoiceIntent.OTHER)
-        org.junit.Assert.assertNotEquals("空 ID 旧题不得屏蔽后续新题", id1, orchestrator.lastExerciseId)
-        assertNotNull("同字后续合法题必须出题", orchestrator.currentExercise)
+        assertEquals("空 ID 同题未作答时 ID 稳定（不随 ToolCall 对象身份漂移）", id1, orchestrator.lastExerciseId)
+        assertNotNull("空 ID 同题未作答不得被屏蔽（不以空串永久屏蔽）", orchestrator.currentExercise)
+        // 作答后：同题（同字同选项）不得复活——空 ID 题同样一次性消费
+        orchestrator.button(orchestrator.currentExercise!!.options.first())
+        orchestrator.userSpoke("嗯", forcedIntent = VoiceIntent.OTHER)
+        assertNull("空 ID 题作答后不得复活", orchestrator.currentExercise)
     }
 
     @Test

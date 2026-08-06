@@ -121,7 +121,11 @@ class ReplayRunner(
         private set
 
     private fun strokeCompleted(ev: WritingEvaluated) {
-        if (ev.phase == "guided_write" && ev.ok) completedStrokes++
+        // W4：复习 REINFORCE 逐笔事件（phase=reinforce）也累计成功笔数——否则复习轮
+        // completedStrokes 恒为 0，App 侧 strokeIdx = completedStrokes+1 恒为 1，REINFORCE
+        // 第 2 笔起的每一笔都错对照参考笔画 #1 评估（整字提交路径不受影响）；
+        // assess（听写检测）不累计（非跟写教学）。换字/复习边界重置时归零。
+        if (ev.ok && (ev.phase == "guided_write" || ev.phase == "reinforce")) completedStrokes++
     }
 
     /** 阶段迁移（advance_phase 工具 / mock 自动推进共用）：

@@ -328,6 +328,32 @@ class ReplayRunnerTest {
         assertEquals(com.literacy.agent.model.ReviewStage.ASSESS, runner.advanceReview(), "无 ASSESS 证据不得推进 REINFORCE")
     }
 
+    @Test
+    fun `进入复习和切换复习字会清理学习阶段与 UI 工具`() {
+        val runner = ReplayRunner().startSession("旧")
+        runner.configureState(runner.state.copy(
+            phase = Phase.DEMONSTRATE,
+            attempt = com.literacy.agent.model.AttemptContext(phase = "demonstrate"),
+            idempotencyKey = "old-key",
+        ))
+        runner.recentUiTools += com.literacy.agent.model.ToolCall("show_character")
+        runner.reviewQueue.addAll(listOf("家", "国"))
+
+        assertTrue(runner.startReview())
+        assertEquals(null, runner.state.phase)
+        assertEquals(null, runner.state.attempt)
+        assertEquals(null, runner.state.idempotencyKey)
+        assertTrue(runner.recentUiTools.isEmpty())
+
+        runner.advanceReview()
+        runner.configureState(runner.state.copy(reviewStage = com.literacy.agent.model.ReviewStage.NEXT))
+        runner.recentUiTools += com.literacy.agent.model.ToolCall("show_options")
+        assertTrue(runner.nextReviewChar())
+        assertEquals("国", runner.state.char)
+        assertEquals(null, runner.state.phase)
+        assertTrue(runner.recentUiTools.isEmpty())
+    }
+
     // ---- 残余修复（验收 P1）：复习中插单（REQUEST_NEW_CHAR）清空旧字复习证据 ----
 
     @Test
@@ -647,5 +673,173 @@ class ReplayRunnerTest {
         )))))
         assertTrue(runner.rejectedCalls.contains("record_result"), "NaN 分数必须拒绝（不进裁决/落库）")
         assertEquals(0, runner.store.results.size)
+    }
+
+    // ---- 最终验收 批次A：复习书写链路（P1-1 门禁/P1-3 答案/P2-5 单 phase/P1-4 换字等级）----
+
+    private fun reviewRunnerWith(char: String = "家") = ReplayRunner().startSession(char).also {
+        it.reviewQueue.addAll(listOf("家", "的"))
+        it.startReview()
+    }
+
+    @Test
+    fun `复习 RECALL 拒绝字形拼音与多选工具（不提前变多选识别）`() {
+        val runner = reviewRunnerWith()   // RECALL
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(
+            com.literacy.agent.model.ToolCall("show_character", mapOf("char" to "家")),
+            com.literacy.agent.model.ToolCall("show_pinyin", mapOf("char" to "家")),
+            com.literacy.agent.model.ToolCall("show_options", mapOf("exercise_id" to "e1")),
+        )))
+        assertTrue(runner.rejectedCalls.contains("show_character"), "RECALL 提取练习不得展示字形")
+        assertTrue(runner.rejectedCalls.contains("show_pinyin"), "RECALL 不得展示拼音")
+        assertTrue(runner.rejectedCalls.contains("show_options"), "RECALL 自由回忆不得提前变多选识别（P2-6）")
+        assertFalse(runner.recentUiTools.any { it.name == "show_character" }, "被拒工具不得进入 UI 渲染源")
+        assertFalse(runner.recentUiTools.any { it.name == "show_options" })
+    }
+
+    @Test
+    fun `复习 ASSESS 拒绝字形拼音但允许 show_options 出题`() {
+        val runner = reviewRunnerWith()
+        runner.advanceReview()   // recall → assess
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(
+            com.literacy.agent.model.ToolCall("show_character", mapOf("char" to "家")),
+            com.literacy.agent.model.ToolCall("show_pinyin", mapOf("char" to "家")),
+            com.literacy.agent.model.ToolCall("show_options", mapOf("exercise_id" to "e1")),
+        )))
+        assertTrue(runner.rejectedCalls.contains("show_character"), "ASSESS 判题不泄露字形")
+        assertTrue(runner.rejectedCalls.contains("show_pinyin"), "ASSESS 判题不泄露拼音")
+        assertFalse(runner.rejectedCalls.contains("show_options"), "ASSESS 出题判题必须允许 show_options")
+        assertTrue(runner.recentUiTools.any { it.name == "show_options" })
+    }
+
+    @Test
+    fun `复习 REINFORCE 保留字形拼音教学提示`() {
+        val runner = reviewRunnerWith()
+        runner.configureState(runner.state.copy(reviewStage = com.literacy.agent.model.ReviewStage.REINFORCE))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(
+            com.literacy.agent.model.ToolCall("show_character", mapOf("char" to "家")),
+            com.literacy.agent.model.ToolCall("show_pinyin", mapOf("char" to "家")),
+        )))
+        assertFalse(runner.rejectedCalls.contains("show_character"), "REINFORCE 再学保留字形提示")
+        assertFalse(runner.rejectedCalls.contains("show_pinyin"))
+        assertTrue(runner.recentUiTools.any { it.name == "show_character" })
+    }
+
+    @Test
+    fun `复习 ASSESS 逐笔事件 phase 为 assess（与 App 层 attempt 一致）`() {
+        val runner = reviewRunnerWith()
+        runner.advanceReview()   // recall → assess
+        runner.onStrokeFinished(1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 100f),
+            com.literacy.agent.model.StrokePoint(100f, 0f),
+        ))
+        assertEquals("assess", runner.lastWritingEval?.phase, "P2-5：复习逐笔事件必须用当前复习阶段 phase（不再写死 guided_write）")
+        val ev = runner.producedEvents.last() as com.literacy.agent.model.WritingEvaluated
+        assertEquals("assess", ev.phase)
+    }
+
+    @Test
+    fun `复习 REINFORCE 逐笔事件 phase 为 reinforce`() {
+        val runner = reviewRunnerWith()
+        runner.configureState(runner.state.copy(reviewStage = com.literacy.agent.model.ReviewStage.REINFORCE))
+        runner.onStrokeFinished(1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 100f),
+            com.literacy.agent.model.StrokePoint(100f, 0f),
+        ))
+        assertEquals("reinforce", runner.lastWritingEval?.phase)
+        // 学习轮不受影响：跟写事件仍是 guided_write
+        val learn = ReplayRunner().startSession("家")
+        learn.onStrokeFinished(1, listOf(
+            com.literacy.agent.model.StrokePoint(0f, 100f),
+            com.literacy.agent.model.StrokePoint(100f, 0f),
+        ))
+        assertEquals("guided_write", learn.lastWritingEval?.phase)
+    }
+
+    @Test
+    fun `复习换字读新字自己的提示等级（不沿用旧字）`() {
+        val runner = ReplayRunner().startSession("旧")
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("家", currentPromptLevel = 5))
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("的", currentPromptLevel = 1))
+        runner.reviewQueue.addAll(listOf("家", "的"))
+        runner.startReview()   // 家 → L5（读自己的持久化等级，不沿用"旧"的默认 L3）
+        assertEquals(5, runner.state.promptLevel, "复习字必须读自己的 currentPromptLevel")
+        // 推进到 NEXT 换下一复习字
+        runner.advanceReview()   // recall → assess
+        runner.tapped("家", correct = true, exerciseId = "e1")   // 判题证据
+        runner.advanceReview()   // assess → reinforce
+        runner.advanceReview()   // reinforce → next
+        assertTrue(runner.nextReviewChar())
+        assertEquals("的", runner.state.char)
+        assertEquals(1, runner.state.promptLevel, "换复习字必须读新字自己的等级（不沿用旧字 L5）")
+    }
+
+    @Test
+    fun `插单换字读新字自己的提示等级`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("药", currentPromptLevel = 0))
+        runner.voice(com.literacy.agent.model.VoiceIntent.REQUEST_NEW_CHAR, "我想学药字")
+        assertEquals("药", runner.state.char)
+        assertEquals(0, runner.state.promptLevel, "插单换字必须读新字自己的等级（不沿用旧字 L3）")
+    }
+
+    @Test
+    fun `complete_character 换字读新字自己的提示等级`() {
+        val runner = ReplayRunner().startSession("家")
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("国", currentPromptLevel = 2))
+        runner.nextCharSelector = { "国" }
+        runner.configureState(runner.state.copy(
+            phase = Phase.DECIDE, allowedActions = com.literacy.agent.replay.ReplayRunner.allowedFor(Phase.DECIDE),
+        ))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("complete_character"))))
+        assertEquals("国", runner.state.char)
+        assertEquals(Phase.INTRODUCE, runner.state.phase)
+        assertEquals(2, runner.state.promptLevel, "complete_character 换字必须读新字自己的等级（不回落默认 L3）")
+    }
+
+    @Test
+    fun `两字完整复习旅程 落库证据与换字目标字 promptLevel`() {
+        val runner = ReplayRunner().startSession("旧")
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("家", currentPromptLevel = 4))
+        runner.store.upsertCharacter(com.literacy.agent.model.CharacterRecord("的", currentPromptLevel = 1))
+        runner.reviewQueue.addAll(listOf("家", "的"))
+        runner.startReview()
+        assertEquals("家", runner.state.char)
+        assertEquals(4, runner.state.promptLevel)
+        // RECALL：show_options 被本地拒绝（自由回忆不变多选）
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("show_options", mapOf("exercise_id" to "q0")))))
+        assertTrue(runner.rejectedCalls.contains("show_options"))
+        // RECALL → ASSESS
+        runner.advanceReview()
+        assertEquals(com.literacy.agent.model.ReviewStage.ASSESS, runner.state.reviewStage)
+        // ASSESS 听写（书写事件即本地作答证据，GT-053 链路）
+        runner.writing("assess", ok = true, promptLevel = 4, score = 0.9)
+        runner.configureState(runner.state.copy(idempotencyKey = "rev-k1"))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "assess", "score" to 0.9, "prompt_level" to "none", "idempotency_key" to "rev-k1"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "ASSESS 听写落库不得被拒：" + runner.rejectReasons.joinToString("; "))
+        // ASSESS → REINFORCE（已落库证据放行门禁）
+        runner.advanceReview()
+        assertEquals(com.literacy.agent.model.ReviewStage.REINFORCE, runner.state.reviewStage)
+        // REINFORCE 再学书写 → 落库 reinforce
+        runner.writing("reinforce", ok = true, promptLevel = 4, score = 0.9)
+        runner.configureState(runner.state.copy(idempotencyKey = "rev-k2"))
+        runner.llmTurn(com.literacy.agent.model.LlmOutput("", listOf(com.literacy.agent.model.ToolCall("record_result", mapOf(
+            "char" to "家",
+            "result" to mapOf("phase" to "reinforce", "score" to 0.9, "prompt_level" to "none", "idempotency_key" to "rev-k2"),
+        )))))
+        assertFalse(runner.rejectedCalls.contains("record_result"), "REINFORCE 落库不得被拒：" + runner.rejectReasons.joinToString("; "))
+        // REINFORCE → NEXT → 下一字
+        runner.advanceReview()
+        assertEquals(com.literacy.agent.model.ReviewStage.NEXT, runner.state.reviewStage)
+        assertTrue(runner.nextReviewChar())
+        assertEquals("的", runner.state.char)
+        assertEquals(1, runner.state.promptLevel, "第二字读自己的等级（不沿用家的 L4）")
+        // 落库证据：家 assess + reinforce 两条
+        assertEquals(2, runner.store.results.size)
+        assertEquals(listOf("assess", "reinforce"), runner.store.results.map { it.phase })
+        assertEquals("家", runner.store.results.first().char)
     }
 }

@@ -203,16 +203,21 @@ class LearnViewModel(
         submit { orchestrator.userSpoke(char, intent) }
     }
 
-    /** 书写完成（米字格手势轨迹）。stroke 为当前笔序号（1-based）。 */
+    /** 书写完成（米字格手势轨迹）。stroke 为当前笔序号（1-based）。
+     *  P1-1：复习 REINFORCE 复用逐笔链路（跟写式评估）——复习态 phase=null，不能只看
+     *  phase==GUIDED_WRITE（复习所有阶段 phase=null，仅按 phase 判断会漏掉复习书写）；
+     *  ASSESS 听写走整字提交（onCompleteWriting），此处只收集不逐笔转交。 */
     fun onStrokeDrawn(path: List<Pair<Float, Float>>) {
         userInteracted()
         val pts = path.map { com.literacy.agent.model.StrokePoint(it.first, it.second) }
-        if (orchestrator.state.phase == Phase.GUIDED_WRITE) {
+        val inReviewReinforce = orchestrator.state.mode == com.literacy.agent.model.Mode.REVIEW &&
+            orchestrator.state.reviewStage == com.literacy.agent.model.ReviewStage.REINFORCE
+        if (orchestrator.state.phase == Phase.GUIDED_WRITE || inReviewReinforce) {
             // P1-1：笔序 = 已完成笔画数 + 1（此前误传 promptLevel）
             val strokeIdx = orchestrator.completedStrokes + 1
             submit { orchestrator.strokeFinished(strokeIdx, pts) }
         }
-        // 独立写等阶段：笔画由 UI 收集，点"完成书写"后统一评估（onCompleteWriting）
+        // 独立写 / 复习 ASSESS：笔画由 UI 收集，点"完成书写"后统一评估（onCompleteWriting）
     }
 
     /** 独立写完成：提交全部笔画轨迹做综合评估（MASTERY-CRITERIA §4 掌握检测点）。

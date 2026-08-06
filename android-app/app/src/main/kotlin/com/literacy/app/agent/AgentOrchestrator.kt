@@ -143,6 +143,7 @@ class AgentOrchestrator(
      *  启动刷新：上次 active → aborted + 创建新 active session（§7.3 / SESSION-LIFECYCLE §1.0，review-05 P0-2）。
      *  P1-10：启动时生成真实复习队列（SESSION-LIFECYCLE §1.2，替代 debug 硬编码）。 */
     fun startSession(char: String, greet: Boolean = true) {
+        clearExerciseState()   // P2-7：新 session = 逻辑新轮次，旧题状态（题目/消费记录）不跨 session 残留
         runner.sessionRefresh()   // aborted 检测 + 新 active session（证据链归属）
         // P1-10：生产复习队列从 characters 排期生成
         if (runner.reviewQueue.isEmpty()) {
@@ -169,6 +170,7 @@ class AgentOrchestrator(
     fun jumpToReview() {
         if (runner.reviewQueue.isEmpty()) runner.reviewQueue.addAll(listOf("家", "的"))
         val ok = runner.startReview()
+        if (ok) clearExerciseState()
         android.util.Log.d("AgentOrchestrator", "jumpToReview ok=$ok queue=${runner.reviewQueue} mode=${runner.state.mode}")
         if (ok) llmTurn(SessionStarted)   // 复习上下文（mode=REVIEW + recall）下的首次教学
     }
@@ -182,6 +184,7 @@ class AgentOrchestrator(
         beginAttempt()   // P0-1：复习检测新 key
         val stage = runner.state.reviewStage
         val next = runner.advanceReview() ?: return false
+        clearExerciseState()   // P2-7：复习阶段边界 = 逻辑新轮次——旧阶段题目（如 ASSESS 已答/未答）作废
         llmTurn(VoiceInput("进入复习阶段 ${next.name.lowercase()}", com.literacy.agent.model.VoiceIntent.OTHER))
         return next == com.literacy.agent.model.ReviewStage.NEXT
     }
@@ -203,10 +206,7 @@ class AgentOrchestrator(
         // 验收 P1-3：REQUEST_NEW_CHAR 换字后作废旧字题目状态——runner 侧 recentUiTools 已清
         // （换字作废），此处同步清 App 侧本地题目缓存与消费记录，防历史题套新字重新生成
         if (intent == com.literacy.agent.model.VoiceIntent.REQUEST_NEW_CHAR) {
-            lastExerciseId = null
-            lastExerciseType = null
-            currentExercise = null
-            consumedExerciseIds.clear()
+            clearExerciseState()
         }
         // review-10 P1-1：按当前阶段绑定本地 phase/dimension（不再固定 recognize——
         // explain/sentence 等语音结果写错维度/被拒）
@@ -257,8 +257,9 @@ class AgentOrchestrator(
         // P1-7：先本地评估（产生 lastWritingEval）再绑定权威结果（跟写评估分数为 record_result 权威）
         runner.onStrokeFinished(stroke, path)
         val eval = runner.lastWritingEval
+        val resultPhase = reviewResultPhase() ?: "guided_write"
         beginAttempt(com.literacy.agent.model.AttemptContext(
-            phase = "guided_write",
+            phase = resultPhase,
             score = eval?.score,
             dimension = com.literacy.agent.model.Dimension.WRITE,
             issues = eval?.issues ?: emptyList(),   // review-10 P1-1：绑定当次评估，不读上一笔
@@ -279,13 +280,14 @@ class AgentOrchestrator(
         val evaluator = com.literacy.agent.learning.RuleStrokeEvaluator()
         // P1-7/P1-3：笔画数必须与参考完全一致（缺笔或多画都判失败）
         if (paths.size != refs.size) {
+            val resultPhase = reviewResultPhase() ?: "independent_write"
             val ev = WritingEvaluated(
-                "independent_write", 0.2, false, runner.state.promptLevel,
+                resultPhase, 0.2, false, runner.state.promptLevel,
                 issues = listOf("笔画数不符（${paths.size}/${refs.size}）"),
             )
             runner.writing(ev.phase, ev.ok, ev.promptLevel, ev.score)
             beginAttempt(com.literacy.agent.model.AttemptContext(
-                phase = "independent_write",
+                phase = resultPhase,
                 score = ev.score,
                 dimension = com.literacy.agent.model.Dimension.WRITE,
             ))
@@ -305,11 +307,12 @@ class AgentOrchestrator(
         val avgScore = evals.map { it.score }.average()
         val ok = avgScore >= 0.6
         val issues = evals.flatMap { it.issues }.distinct().take(3)   // 合并问题，最多 3 条
-        val ev = WritingEvaluated("independent_write", avgScore, ok, runner.state.promptLevel, issues)
+        val resultPhase = reviewResultPhase() ?: "independent_write"
+        val ev = WritingEvaluated(resultPhase, avgScore, ok, runner.state.promptLevel, issues)
         runner.writing(ev.phase, ev.ok, ev.promptLevel, ev.score)
         // P1-7：评估完成后绑定权威结果（independent_write 的 record_result 以本地 avgScore 为准）
         beginAttempt(com.literacy.agent.model.AttemptContext(
-            phase = "independent_write",
+            phase = resultPhase,
             score = ev.score,
             dimension = com.literacy.agent.model.Dimension.WRITE,
             issues = ev.issues,   // review-10 P1-1：绑定当次评估
@@ -344,7 +347,10 @@ class AgentOrchestrator(
             "next" -> {
                 // 复习模式：推进下一复习字（队列空时本地拒绝，由 LLM 决定结束）
                 beginAttempt()   // P2-D：推进是真实尝试，签发新 key
-                if (runner.nextReviewChar()) llmTurn(VoiceInput("下一个", com.literacy.agent.model.VoiceIntent.OTHER))
+                if (runner.nextReviewChar()) {
+                    clearExerciseState()
+                    llmTurn(VoiceInput("下一个", com.literacy.agent.model.VoiceIntent.OTHER))
+                }
             }
             else -> {   // P2-D：判题选项/模拟认对认错等真实尝试才签发 key（help/skip/pause/end 是元动作）
                 // review-10 P1-5：选择题本地判题——正确答案=当前目标字（听音选字/选字填空选项
@@ -384,6 +390,23 @@ class AgentOrchestrator(
      *  作答后 currentExercise 已清空但旧题仍在 recentUiTools，无条件重提会让旧题复活可再点；
      *  消费记录让提取跳过旧题（新题出现时旧记录作废）。 */
     private val consumedExerciseIds = mutableSetOf<String>()
+    private val fallbackExerciseIds = java.util.IdentityHashMap<com.literacy.agent.model.ToolCall, String>()
+    private var fallbackExerciseSequence = 0L
+
+    private fun reviewResultPhase(): String? = when {
+        runner.state.mode != com.literacy.agent.model.Mode.REVIEW -> null
+        runner.state.reviewStage == com.literacy.agent.model.ReviewStage.ASSESS -> "assess"
+        runner.state.reviewStage == com.literacy.agent.model.ReviewStage.REINFORCE -> "reinforce"
+        else -> null
+    }
+
+    private fun clearExerciseState() {
+        lastExerciseId = null
+        lastExerciseType = null
+        currentExercise = null
+        consumedExerciseIds.clear()
+        fallbackExerciseIds.clear()
+    }
 
     /** review-11 P1-1.4：本地选择题真值——show_options 执行后提取（选项 + 题目 id + 正确答案=当前字）。
      *  UI 渲染本地保存的选项（不直接信模型 show_options 参数渲染选项）；判题 correct=选项==当前字；
@@ -400,6 +423,8 @@ class AgentOrchestrator(
         // review-09 P1-13：离页取消——在途回包（含 Provider 失败兜底）不再执行工具/推进/落库
         if (cancelled) return
         val producedBefore = runner.producedEvents.size
+        val stateBeforeTools = runner.state
+        val uiToolsBefore = runner.recentUiTools.size   // P2-7：只处理本 turn 新执行的 UI tool（避免每轮重扫完整历史重洗牌）
         val output = try {
             provider.respond(buildContext(event))
         } catch (e: Exception) {
@@ -418,15 +443,26 @@ class AgentOrchestrator(
         // （runner.llmTurn/refreshUi 播报/落库都属离页后副作用）
         if (cancelled) return
         runner.llmTurn(output)
+        if (runner.state.char != stateBeforeTools.char || runner.state.mode != stateBeforeTools.mode) {
+            clearExerciseState()
+        }
+        // P2-7：complete_character 逻辑新轮次（含同字重复学习——char 不变也要清）也作废 App 侧旧题；
+        // 必须在本轮题目提取之前清（同轮新 show_options 是下一字的新题，不受影响）
+        val completed = runner.producedEvents.size > producedBefore &&
+            runner.producedEvents.lastOrNull() is com.literacy.agent.model.CharacterCompleted
+        if (completed) clearExerciseState()
         lastText = runner.lastText
         ttsText = runner.ttsText   // P1-13：SafetyGuard 过滤后的文本（TTS 用）
         micRequested = runner.listenRequested
-        // review-10 P1-5：从最近 show_options 提取当前题目（exercise_id 供判题一次性消费）
-        // review-11 P1-1.4：选项本地持有（UI 渲染源——不直接信模型参数渲染选项）
+        // review-10 P1-5：从本 turn 新执行的 show_options 提取当前题目（exercise_id 供判题一次性消费）
+        // review-11 P1-1.4：选项本地持有（UI 渲染源——不直接信模型 show_options 参数渲染选项）
         // 残余修复（验收 P1）：canonical show_options 只传 exercise_id/prompt（AGENT-PROTOCOL），
         // 选项一律本地生成（当前字 + 字库校验的干扰字）——不依赖模型 options 参数，标准调用也能出题
-        runner.recentUiTools.lastOrNull { it.name == "show_options" }?.let { tool ->
-            val exId = tool.arguments["exercise_id"]?.toString()
+        // P2-7：只取本轮新增工具——旧题（recentUiTools 历史）不每轮重扫：同 ID 无新 ToolCall
+        // 时保留现有题目快照不重新洗牌（按钮不跳位）
+        runner.recentUiTools.drop(uiToolsBefore).lastOrNull { it.name == "show_options" }?.let { tool ->
+            val rawExId = tool.arguments["exercise_id"]?.toString()
+            val exId = rawExId?.takeIf { it.isNotBlank() }   // P2-7：空白 exercise_id 按缺失处理（走 fallback，不屏蔽后续空 ID 新题）
             // 本地生成选项：当前字 + 字库中可用的干扰字（不依赖模型 options）
             val target = runner.state.char ?: ""
             val distractors = DISTRACTOR_CHARS.filter { it != target && hanzi?.find(it) != null }.take(3)
@@ -435,7 +471,9 @@ class AgentOrchestrator(
                 // 残余修复（验收 P1-2）：稳定 fallback ID——基于当前字 + 未洗牌选项集排序
                 // （直接取 shuffled 哈希：每轮洗牌不同、同题 ID 漂移，消费检查失效）；
                 // 换字/换选项才变化，作答后同题不可复活
-                val stableHash = (target + "|" + opts.sorted().joinToString(",")).hashCode().toString()
+                val stableHash = fallbackExerciseIds.getOrPut(tool) {
+                    "fallback-${++fallbackExerciseSequence}"
+                }
                 // review-11 批A + 验收 P1-2：作答后旧题不得复活——原始 exId 与 fallback ID
                 // 都参与消费检查（fallback 题作答后同样一次性消费）；新题出现时旧记录作废
                 val consumedKey = exId ?: stableHash
@@ -467,8 +505,6 @@ class AgentOrchestrator(
             android.util.Log.d("AgentOrchestrator", "llmTurn(${event::class.simpleName}) toolCalls=${output.toolCalls.map { it.name }}")
         }
         // P1-11：complete_character 执行后 → 整字完成决策 turn（模型决定下一字/复习/结束）
-        val completed = runner.producedEvents.size > producedBefore &&
-            runner.producedEvents.lastOrNull() is com.literacy.agent.model.CharacterCompleted
         if (completed) {
             llmTurn(com.literacy.agent.model.CharacterCompleted)
         }

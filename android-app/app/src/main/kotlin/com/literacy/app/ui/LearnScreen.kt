@@ -49,7 +49,11 @@ fun LearnScreen(
     var drawnLibrary by remember { mutableStateOf<List<List<Pair<Float, Float>>>>(emptyList()) }
     // review-11 P1-5：清屏（clear_grid）也重置提交数据——此前只随 phase 重置，清屏后点"完成书写"
     // 会把旧轨迹一并提交（与 Canvas 重建的 resetKey 保持一致）
-    LaunchedEffect(ui.phase, viewModel.clearGridSignal) { drawnLibrary = emptyList(); strokeCount = 0 }
+    // P1-2：重置边界与 MizigeGrid resetKey 同源——复习所有阶段 phase=null，仅按 phase 重置会
+    // 让 RECALL→ASSESS、ASSESS→REINFORCE、切换复习字保留旧轨迹；含 char/mode/reviewStage/phase/clearGridSignal
+    LaunchedEffect(ui.char, ui.mode, ui.reviewStage, ui.phase, viewModel.clearGridSignal) {
+        drawnLibrary = emptyList(); strokeCount = 0
+    }
     val focusManager = LocalFocusManager.current
     // 用户开口（实时转写非空）→ 打断教学 TTS，让位给用户（实时对话）
     LaunchedEffect(partialText) {
@@ -99,7 +103,7 @@ fun LearnScreen(
 
         // P1-4 + review-09 P1-3：独立写（无提示）与复习检测阶段（RECALL 提取练习 / ASSESS 判题）
         // 都不显示答案（字形/拼音/结构）——RECALL 隐藏后标题不得含 char，ASSESS 同样隐藏
-        var answerLocked by remember(ui.uiTools.size) { mutableStateOf(false) }   // review-10 P1-5：旧题一次性消费
+        var answerLocked by remember(ui.exercise?.exerciseId) { mutableStateOf(false) }   // 每道新题解锁
         val hideAnswer = (ui.phase == Phase.INDEPENDENT_WRITE.display && !ui.sessionEnded) ||
             (ui.mode == "review" && (ui.reviewStage == "recall" || ui.reviewStage == "assess"))
         Text(
@@ -131,20 +135,23 @@ fun LearnScreen(
         Spacer(Modifier.height(8.dp))
 
         // 米字格（按阶段决定揭示模式）
-        val reveal = when (ui.phase) {
-            Phase.RECOGNIZE.display, Phase.DEMONSTRATE.display -> -1            // 显示全字
+        val reveal = when {
+            ui.mode == "review" && ui.reviewStage in listOf("recall", "assess") -> 0
+            ui.phase in listOf(Phase.RECOGNIZE.display, Phase.DEMONSTRATE.display) -> -1            // 显示全字
             // P2-2 权威成功笔数 + review-10 P1-4：首次进入也显示当前待写笔（reveal = 已完成+1）
-            Phase.GUIDED_WRITE.display -> (viewModel.completedStrokes + 1).coerceAtMost(ui.strokeCount)
-            Phase.INDEPENDENT_WRITE.display -> 0                                 // 空白
+            ui.phase == Phase.GUIDED_WRITE.display -> (viewModel.completedStrokes + 1).coerceAtMost(ui.strokeCount)
+            ui.phase == Phase.INDEPENDENT_WRITE.display -> 0                                 // 空白
             else -> -1
         }
         MizigeGrid(
             char = ui.char,
             strokes = viewModel.orchestratorStrokes,
             revealStrokes = reveal,
-            showOutline = ui.phase in listOf(Phase.RECOGNIZE.display, Phase.DEMONSTRATE.display, ""),
+            showOutline = !hideAnswer && ui.phase in listOf(Phase.RECOGNIZE.display, Phase.DEMONSTRATE.display, ""),
             // P1-8：回调为字库坐标（评估）；P1-7：阶段变化重置轨迹（跟写轨迹不混入独立写）
-            resetKey = ui.phase.toString() + ":" + viewModel.clearGridSignal,   // review-09 P1-5：clear_grid 触发重置
+            // P1-2：重置边界含 char/mode/reviewStage/phase/clearGridSignal——复习阶段（phase=null）
+            // 换阶段/换复习字必须清旧轨迹（此前仅 phase+clearGridSignal，复习内所有阶段同 key 不重置）
+            resetKey = ui.char + ":" + ui.mode + ":" + ui.reviewStage + ":" + ui.phase + ":" + viewModel.clearGridSignal,
             enabled = !ui.loading && !ui.paused && !ui.sessionEnded,   // P1-14：门禁
             onStrokeCountChanged = { strokeCount = it },
             onStrokeComplete = { path ->
@@ -157,8 +164,12 @@ fun LearnScreen(
                 .testTag("mizige_grid"),   // 测试定位（androidTest 手势绘制）
         )
 
-        // 独立写阶段：画完多笔后点"完成书写"提交整体评估（MASTERY-CRITERIA §4）
-        if (ui.phase == Phase.INDEPENDENT_WRITE.display && !ui.sessionEnded) {
+        // 独立写 / 复习 ASSESS·REINFORCE：画完多笔后点"完成书写"提交整体评估（MASTERY-CRITERIA §4）
+        // P1-1：复习态 phase=null——不能只看 phase==INDEPENDENT_WRITE；按 mode+reviewStage 接通
+        // 已有整字评估链路（ASSESS 听写走整字提交；REINFORCE 复用整字/逐笔链路）
+        val showCompleteWriting = (ui.phase == Phase.INDEPENDENT_WRITE.display ||
+            (ui.mode == "review" && ui.reviewStage in listOf("assess", "reinforce"))) && !ui.sessionEnded
+        if (showCompleteWriting) {
             Text(
                 "已画 ${strokeCount}/${ui.strokeCount} 笔，画完点完成",
                 fontSize = 15.sp,
@@ -327,7 +338,10 @@ fun LearnScreen(
                 }
                 "show_character" -> {
                     // 独立写提示：模型 reveal 时覆盖隐藏（主标题 "？" 场景也能看到字形）
-                    if (!ui.sessionEnded) {
+                    // P1-3：show_character(revealStrokes=0) 是"不揭示任何笔画"的独立写/检测提示——
+                    // 参数即答案，不得渲染完整汉字；hideAnswer（独立写/复习 RECALL·ASSESS）保留为第二层保护
+                    val reveal = tool.arguments["revealStrokes"]?.toString()?.toIntOrNull()
+                    if (!ui.sessionEnded && !hideAnswer && reveal != 0) {
                         ui.char.takeIf { it.isNotBlank() }?.let { c ->
                             Text("字形提示：$c", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(2.dp))

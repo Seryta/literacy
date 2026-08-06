@@ -209,4 +209,115 @@ class LearnScreenButtonsTest {
             rule.onAllNodes(hasText("已画 0/", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
     }
+
+    // ---- 最终验收 批次A：复习书写真实链路（P1-1/P1-2/P1-3）----
+
+    /** 复习书写旅程脚本：进入复习 → ASSESS → 整字提交评估。 */
+    private val reviewWriteScript = listOf(
+        LlmOutput("开始复习", emptyList()),   // jumpToReview（RECALL）
+        LlmOutput("听写开始", emptyList()),   // advanceReview → ASSESS
+        LlmOutput("写得好", emptyList()),     // completeIndependentWrite 评估后 LLM 反馈
+    )
+
+    private fun swipeOneStroke() {
+        rule.onNodeWithTag("mizige_grid").performTouchInput {
+            swipe(
+                start = center.copy(x = center.x - 50f, y = center.y - 50f),
+                end = center.copy(x = center.x + 50f, y = center.y + 50f),
+                durationMillis = 200,
+            )
+        }
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun reviewAssess_completeWritingButtonShownAndSubmits() {
+        // P1-1：复习 ASSESS（phase=null）也能显示"完成书写"并走整字提交链路
+        val vm = newViewModel(reviewWriteScript)
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:review")
+        waitUntil(vm, label = "进入复习") { vm.ui.mode == "review" }
+        rule.onNode(hasText("复习模式", substring = true)).assertExists()
+        // RECALL：不显示"完成书写"（自由回忆）
+        rule.onNode(hasText("完成书写", substring = true)).assertDoesNotExist()
+        // 推进到 ASSESS
+        rule.onNodeWithText("下一阶段").performClick()
+        waitUntil(vm, label = "进入 ASSESS") { vm.ui.reviewStage == "assess" }
+        // ASSESS 显示"完成书写"按钮（P1-1 修复：复习态 phase=null 也能提交听写）
+        rule.onNode(hasText("完成书写", substring = true)).assertExists()
+        // 画一笔 → 按钮带笔数
+        swipeOneStroke()
+        rule.onNode(hasText("完成书写（1 笔）", substring = true)).assertExists()
+        // 点完成书写 → 整字评估（笔画数不符参考 → 本地判失败，attempt 绑 assess phase）
+        rule.onNode(hasText("完成书写（1 笔）", substring = true)).performClick()
+        waitUntil(vm, label = "ASSESS 整字评估") { vm.debugOrchestratorState.attempt?.phase == "assess" }
+    }
+
+    @Test
+    fun reviewStageChange_resetsDrawnGrid() {
+        // P1-2：复习阶段边界（RECALL→ASSESS，phase 恒 null）必须重置轨迹——
+        // 旧 resetKey 只含 phase+clearGridSignal，复习内所有阶段同 key 不重置，旧轨迹跨阶段残留
+        val vm = newViewModel(listOf(
+            LlmOutput("开始复习", emptyList()),   // jumpToReview
+            LlmOutput("听写开始", emptyList()),   // advanceReview → ASSESS
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:review")
+        waitUntil(vm, label = "进入复习") { vm.ui.mode == "review" }
+        // RECALL：画一笔（只收集不转交——复习 RECALL 无逐笔评估）
+        swipeOneStroke()
+        // 推进到 ASSESS：阶段边界必须清轨迹（drawnLibrary/strokeCount 归零）
+        rule.onNodeWithText("下一阶段").performClick()
+        waitUntil(vm, label = "进入 ASSESS") { vm.ui.reviewStage == "assess" }
+        rule.onNode(hasText("已画 0/", substring = true)).assertExists()
+    }
+
+    @Test
+    fun reviewRecall_hidesAnswer() {
+        // P1-3：复习 RECALL/ASSESS 隐藏答案（标题 "？"，字形/拼音均不显示）
+        val vm = newViewModel(listOf(
+            LlmOutput("开始复习", listOf(ToolCall("show_pinyin", mapOf("char" to "家")))),
+            LlmOutput("听写开始", listOf(ToolCall("show_character", mapOf("char" to "家")))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:review")
+        waitUntil(vm, label = "进入复习") { vm.ui.mode == "review" }
+        rule.waitForIdle()
+        // RECALL：标题是 "？"（不得泄露目标字）；show_pinyin 被本地拒绝 + UI 不渲染
+        rule.onNodeWithText("？").assertExists()
+        rule.onNode(hasText("拼音：", substring = true)).assertDoesNotExist()
+        rule.onNode(hasText("字形提示：", substring = true)).assertDoesNotExist()
+        // 推进到 ASSESS：同样隐藏（标题 "？"）
+        rule.onNodeWithText("下一阶段").performClick()
+        waitUntil(vm, label = "进入 ASSESS") { vm.ui.reviewStage == "assess" }
+        rule.waitForIdle()
+        rule.onNodeWithText("？").assertExists()
+        rule.onNode(hasText("字形提示：", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun independentWrite_showCharacterReveal0_hidesFullChar() {
+        // P1-3：show_character(revealStrokes=0) 是"不揭示任何笔画"的独立写提示——参数即答案，
+        // 不得渲染完整汉字字形（此前 UI 只检查 sessionEnded 直接显示）
+        val vm = newViewModel(listOf(
+            LlmOutput("开始", listOf(ToolCall("show_character", mapOf("char" to "家", "revealStrokes" to 0)))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:independent_write")
+        waitUntil(vm, label = "进入独立写") { vm.ui.phase == "independent_write" }
+        rule.waitForIdle()
+        rule.onNode(hasText("字形提示：", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun guidedWrite_showCharacterRevealPositive_rendersHint() {
+        // 有提示的 show_character（revealStrokes>0）仍渲染（教学提示，不误伤）
+        val vm = newViewModel(listOf(
+            LlmOutput("开始", listOf(ToolCall("show_character", mapOf("char" to "家", "revealStrokes" to 3)))),
+        ))
+        rule.setContent { LearnScreen(vm, onBack = {}) }
+        vm.startLearning("家:guided_write")
+        waitUntil(vm, label = "进入跟写") { vm.ui.phase == "guided_write" }
+        rule.onNode(hasText("字形提示：", substring = true)).assertExists()
+    }
 }

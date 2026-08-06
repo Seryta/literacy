@@ -138,16 +138,21 @@ class ReplayRunner(
 
     /** SessionStarted → introduce（§6.1 起始阶段）。P2-11：提示等级从 characters.currentPromptLevel 恢复。 */
     fun startSession(char: String, path: LearningPath = LearningPath.WRITE_PARALLEL): ReplayRunner {
-        val savedLevel = store.getCharacter(char).currentPromptLevel
         state = LessonState(
             phase = Phase.INTRODUCE,
             char = char,
             learningPath = path,
-            promptLevel = savedLevel,
+            promptLevel = savedPromptLevel(char),
             allowedActions = allowedFor(Phase.INTRODUCE),
         )
         return this
     }
+
+    /** P1-4：读目标字持久化的提示等级——换字（复习/插单/complete_character）必须读新字自己的
+     *  currentPromptLevel，不沿用上一字的旧等级（此前仅 startSession 读）。char 可空（理论上
+     *  startSession 后恒非空）时回落默认 L3。 */
+    private fun savedPromptLevel(char: String?): Int =
+        char?.let { store.getCharacter(it).currentPromptLevel } ?: 3
 
     /**
      * 启动刷新（SESSION-LIFECYCLE §1.0，GT-016）：上次 active → aborted，写入新 active session。
@@ -193,6 +198,7 @@ class ReplayRunner(
                 learningPath = state.learningPath,
                 allowedActions = allowedFor(Phase.INTRODUCE),
                 idempotencyKey = null, attempt = null,
+                promptLevel = savedPromptLevel(next ?: state.char),   // P1-4：插单换字读新字自己的等级
             )
             completedStrokes = 0
             phaseReady = false
@@ -317,12 +323,20 @@ class ReplayRunner(
         reviewAnsweredAttempt = null
         reviewAnsweredKey = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
+        recentUiTools.clear()
+        val next = reviewQueue.removeFirst()   // P1-9：消费首项（next 不再拿到同字）
         state = state.copy(
             mode = Mode.REVIEW,
             reviewStage = ReviewStage.RECALL,
-            char = reviewQueue.removeFirst(),   // P1-9：消费首项（next 不再拿到同字）
+            phase = null,
+            char = next,
             allowedActions = allowedForReview(),
+            idempotencyKey = null,
+            attempt = null,
+            promptLevel = savedPromptLevel(next),   // P1-4：复习字读自己的等级（不沿用学习轮旧等级）
         )
+        completedStrokes = 0
+        phaseReady = false
         return true
     }
 
@@ -400,7 +414,15 @@ class ReplayRunner(
         reviewAnsweredAttempt = null
         reviewAnsweredKey = null
         assessRecordedForRound.clear()   // 新复习字新轮次，ASSESS 记账重置
-        state = state.copy(char = reviewQueue.removeFirst(), reviewStage = ReviewStage.RECALL)
+        recentUiTools.clear()
+        val next = reviewQueue.removeFirst()
+        state = state.copy(
+            char = next, reviewStage = ReviewStage.RECALL,
+            phase = null, idempotencyKey = null, attempt = null,
+            promptLevel = savedPromptLevel(next),   // P1-4：下一复习字读自己的等级
+        )
+        completedStrokes = 0
+        phaseReady = false
         return true
     }
 
@@ -474,8 +496,11 @@ class ReplayRunner(
             reference != null -> strokeEvaluator.evaluate(path, reference)
             else -> com.literacy.agent.learning.StrokeEvaluation(0.9, true)   // 几何占位（无字库兜底，测试确定性）
         }
+        // P2-5：一个尝试只保留一个 canonical phase——复习模式（ASSESS/REINFORCE）逐笔事件
+        // 用当前复习阶段 phase（assess/reinforce），不再写死 guided_write（与 App 层 attempt
+        // 绑定同源，LLM 上下文/落库 phase 一致；跟写计数仅学习轮生效）
         val ev = WritingEvaluated(
-            phase = "guided_write",
+            phase = if (state.mode == Mode.REVIEW) reviewWritingPhase() else "guided_write",
             score = eval.score,
             ok = eval.ok,
             promptLevel = state.promptLevel,
@@ -492,6 +517,14 @@ class ReplayRunner(
             judgePhase(ev)
         }
         if (autoAdvance) advanceStep()
+    }
+
+    /** P2-5：复习模式逐笔事件的 canonical phase——ASSESS 听写=assess、REINFORCE=reinforce；
+     *  RECALL/NEXT 无书写语义，保守回落 guided_write（App 层同样只在这两阶段转交）。 */
+    private fun reviewWritingPhase(): String = when (state.reviewStage) {
+        ReviewStage.ASSESS -> "assess"
+        ReviewStage.REINFORCE -> "reinforce"
+        else -> "guided_write"
     }
 
     /** 参考笔画：字库真实笔画（按序号）优先；否则几何占位直线。 */
@@ -609,10 +642,17 @@ class ReplayRunner(
             }
             executedToolCalls += tc.name   // review-09 P2-14：实际执行记录
             // review-10 P2-19：allowed 检查在 when 各分支——被拒绝的从记录移除（防"未执行被当已调用"）
-            // 复习 recall：本地拒绝展示答案工具（§6.5 提取练习，GT-051——不依赖模型自觉）
-            if (state.mode == Mode.REVIEW && state.reviewStage == ReviewStage.RECALL &&
-                (tc.name == "show_character" || tc.name == "show_pinyin")
+            // P1-3 + P2-6：复习答案门禁——RECALL（自由回忆）禁 show_character/show_pinyin/show_options
+            // （提取练习不提前变多选识别）；ASSESS（判题）禁 show_character/show_pinyin（不泄露答案）、
+            // 允许 show_options（出题判题）；REINFORCE（再学）保留字形/拼音教学提示。
+            // 不依赖模型自觉（GT-051 语义扩展）。
+            if (state.mode == Mode.REVIEW && (tc.name == "show_character" || tc.name == "show_pinyin") &&
+                state.reviewStage in setOf(ReviewStage.RECALL, ReviewStage.ASSESS)
             ) {
+                rejectedCalls += tc.name
+                continue
+            }
+            if (state.mode == Mode.REVIEW && state.reviewStage == ReviewStage.RECALL && tc.name == "show_options") {
                 rejectedCalls += tc.name
                 continue
             }
@@ -656,13 +696,15 @@ class ReplayRunner(
                     // review-09 P1-6：进入下一字（App 注入的 selector；无下一字则重复当前字），
                     // 并清理旧字残留状态（笔画数/暂停/拒绝/UI 工具/幂等键/本地裁决）
                     val next = nextCharSelector?.invoke()
+                    val target = next ?: state.char
                     state = LessonState(
                         phase = Phase.INTRODUCE,
-                        char = next ?: state.char,
+                        char = target,
                         learningPath = state.learningPath,
                         allowedActions = allowedFor(Phase.INTRODUCE),
                         idempotencyKey = null,   // 新字新尝试
                         attempt = null,
+                        promptLevel = savedPromptLevel(target),   // P1-4：下一字读自己的等级（不回落默认）
                     )
                     completedStrokes = 0
                     paused = false

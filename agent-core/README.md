@@ -119,7 +119,7 @@ docker run --rm -v gradle-cache:/home/gradle/.gradle \
 
 ## review-05 修复（2026-08-02）
 
-承接全量评审（reviews/review-05.md），P0/P1 全部闭环、P2 代码类完成：
+承接全量评审（docs/reviews/ 历次记录，如 review-05），P0/P1 全部闭环、P2 代码类完成：
 
 | 项 | 修复 |
 |----|------|

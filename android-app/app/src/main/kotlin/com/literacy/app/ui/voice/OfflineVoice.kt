@@ -158,6 +158,7 @@ class OfflineVoiceEngine(
     private val sttLock = Any()
     private val playback = TtsPlaybackCoordinator()
     private val sttState = SttState()
+    @Volatile private var ttsPlaying = false
 
     // ── TTS（VITS 中文女声）────────────────────────────────────────
     private var tts: OfflineTts? = null
@@ -253,8 +254,6 @@ class OfflineVoiceEngine(
     }
 
     private fun play(samples: FloatArray, sampleRate: Int, generation: Int): Boolean {
-        // 残余修复（验收 P2）：PCM 转换/建轨/写入是真实播放前的大窗口——转换后、play() 前
-        // 各校验一次代次（此间 cancel+stop 只停已发布 track，看不到未发布的；不查则旧音频仍会响起）
         if (!playback.isCurrent(generation)) return false
         val short = ShortArray(samples.size)
         for (i in samples.indices) {
@@ -277,21 +276,33 @@ class OfflineVoiceEngine(
             .build()
         track.write(short, 0, short.size)
         if (!playback.isCurrent(generation)) {
-            track.release()   // 窗口内被取消：不播，直接释放
+            track.release()
             return false
         }
-        // 最终代次检查 + 轨道发布/播放统一在协调器锁内（P2-8）：cancel 先拿锁→不发布；
-        // 本方法先拿锁发布→cancel 的 stopLocked 停掉已发布轨道（两交错均有测试锁定）
-        // W1：publishIfCurrent 返回 false（代次已在 PCM 转换/建轨/写缓冲窗口内被取消/取代）
-        // 时，track 从未交给 audioTrack 字段（stopLocked 不会释放它）——必须就地释放，
-        // 否则 MODE_STATIC 大缓冲 AudioTrack 泄漏（publishIfCurrent docstring 承诺
-        // "调用方负责释放轨道"，此处的调用方就是 play）
         val published = playback.publishIfCurrent(generation) {
             audioTrack = track
+            ttsPlaying = true
             track.play()
         }
-        if (!published) track.release()
-        return published
+        if (!published) {
+            track.release()
+            return false
+        }
+        try {
+            val totalSamples = samples.size
+            while (playback.isCurrent(generation)) {
+                val pos = try { track.playbackHeadPosition } catch (_: Exception) { -1 }
+                if (pos < 0) break
+                if (pos >= totalSamples) {
+                    Thread.sleep(150L)
+                    break
+                }
+                Thread.sleep(20L)
+            }
+        } finally {
+            ttsPlaying = false
+        }
+        return playback.isCurrent(generation)
     }
 
     // ── STT（流式 zipformer 中文识别）─────────────────────────────
@@ -410,7 +421,7 @@ class OfflineVoiceEngine(
             )
             val recorder = try {
                 AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                     minBuf.coerceAtLeast(sampleRate),
                 )
@@ -432,15 +443,16 @@ class OfflineVoiceEngine(
             val thread = Thread {
                 try {
                     recorder.startRecording()
-                    // 启动失败（无输入流）：降级，不进入采集循环（避免 native decode 崩溃）
                     if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) return@Thread
+                    val listenStartMs = System.currentTimeMillis()
                     while (sttState.listening && !sttState.cancelled) {
                         val stream: OnlineStream = engine.createStream()
                         try {
                             Log.d(tag, "createStream 成功，开始采集")
                             var fullText = ""
                             var silentMs = 0L
-                            var silentRun = 0   // review-09 W1：连续静音帧计数（消抖）
+                            var silentRun = 0
+                            var speechMs = 0L
                             var lastPartial = ""
                             val shortBuf = ShortArray(minBuf / 2)
                             // 累积音频到流式 chunk 再解码（zipformer 需约 39 特征帧≈390ms；
@@ -455,22 +467,17 @@ class OfflineVoiceEngine(
                                 var rms = 0f
                                 for (i in 0 until n) rms += shortBuf[i] * shortBuf[i]
                                 rms = kotlin.math.sqrt(rms / n)
-                                if (rms < 80f) {   // 静音阈值（低：避免轻声说话被当静音）
-                                    // review-09 W1：连续静音帧消抖——单帧/偶发噪声（爆音、环境音）
-                                    // 不累计静音；连续 5 帧（≈40ms）静音才计入，避免停顿前
-                                    // 一两帧噪声打断语音段
+                                if (rms < 200f) {
                                     silentRun++
                                     if (silentRun >= 5) {
                                         silentMs += n * 1000L / sampleRate
-                                        // review-09 P1-01 + W1：已有文本 → 700ms 静音即结束
-                                        // （老人慢语速停顿 500-800ms 常见，500ms 会把一句切两段）；
-                                        // 无文本（等待开口）→ 长静音 900ms
-                                        val limit = if (fullText.isNotBlank()) 700L else 900L
-                                        if (silentMs > limit) break   // 一句话结束
+                                        val limit = if (fullText.isNotBlank()) 1200L else 1500L
+                                        if (silentMs > limit) break
                                     }
                                 } else {
-                                    silentRun = 0   // 有语音活动（非静音）重置（含消抖计数）
+                                    silentRun = 0
                                     silentMs = 0L
+                                    speechMs += n * 1000L / sampleRate
                                 }
                                 // 累积到 chunk（约 0.5s），标准流式：acceptWaveform 后 isReady 则 decode
                                 for (i in 0 until n) accum.add(shortBuf[i])
@@ -486,11 +493,15 @@ class OfflineVoiceEngine(
                                     if (text.isNotBlank() && text != lastPartial) {
                                         lastPartial = text
                                         fullText = text
-                                        silentMs = 0L   // 新文本视为正在说话（停顿不截断）
+                                        silentMs = 0L
                                         val t = text
                                         Log.d(tag, "实时转写: $t")
                                         val gen = generation
-                                        mainHandler.post { if (gen == sttState.currentGeneration()) onPartialCb?.invoke(t) }   // 实时字幕（代次校验防穿透）
+                                        val now = System.currentTimeMillis()
+                                        val withinTailGuard = now - listenStartMs < 500L || ttsPlaying
+                                        if (!withinTailGuard) {
+                                            mainHandler.post { if (gen == sttState.currentGeneration()) onPartialCb?.invoke(t) }
+                                        }
                                     }
                                 }
                             }
@@ -512,18 +523,18 @@ class OfflineVoiceEngine(
                             // review-09 P1-04（C1）：解码完成后再检查一次——取消可能发生在
                             // 尾解码期间；不得把结果投递给 onResult（触发在途 LLM 调用/工具写库）
                             if (sttState.cancelled) return@Thread
-                            // 一句话结束：回调最终结果（尾音解码后的文本优先；代次校验防穿透到新监听）
                             val gen = generation
-                            if (finalText.isNotBlank()) {
+                            val tooShort = speechMs < 300L || ttsPlaying
+                            if (finalText.isNotBlank() && !tooShort) {
                                 val t = finalText
                                 Log.d(tag, "识别结果: $t")
                                 mainHandler.post { if (gen == sttState.currentGeneration()) onResult?.invoke(t) }
-                            } else if (fullText.isNotBlank()) {
+                            } else if (fullText.isNotBlank() && !tooShort) {
                                 val t = fullText
                                 Log.d(tag, "识别结果: $t")
                                 mainHandler.post { if (gen == sttState.currentGeneration()) onResult?.invoke(t) }
                             } else {
-                                Log.d(tag, "识别超时/无结果（静音）")
+                                Log.d(tag, "识别超时/无结果（静音或过短 speechMs=$speechMs）")
                             }
                             if (!autoRestart) break   // 不自动重听则结束
                         } finally {

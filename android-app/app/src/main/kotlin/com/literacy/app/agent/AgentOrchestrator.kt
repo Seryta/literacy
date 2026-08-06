@@ -34,6 +34,9 @@ import com.literacy.agent.data.HanziDataSource
 /** 本地选择题干扰字候选（从字库校验可用性后取 3 个）。 */
 private val DISTRACTOR_CHARS = listOf("家", "国", "爱", "好", "学", "天", "人", "大", "小", "水", "火", "山", "门", "日", "月")
 
+private fun escapeForPromptBoundary(text: String): String =
+    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 class AgentOrchestrator(
     private val provider: LlmProvider,
     private val hanzi: HanziDataSource? = null,
@@ -42,23 +45,18 @@ class AgentOrchestrator(
 ) {
     private val runner = ReplayRunner(
         store = store ?: com.literacy.agent.store.InMemoryStore(),
-        hanziRepository = hanzi,   // P1-1：注入字库——跟写笔画数门禁 + 真实参考骨架生效
+        hanziRepository = hanzi,
     ).apply {
-        // 真实模式：推进由 LLM 的 advance_phase 工具触发（事件只记录 + 本地裁决），
-        // 避免"事件自动推进 + 模型 advance_phase"双重推进（JVM 真实模式同语义）
         autoAdvance = false
-        // review-09 P1-7：生产严格校验——record_result 必须回传 App 签发的幂等键 + 本地 attempt
         strictResultValidation = true
-        // review-09 P1-6：complete_character 后进入下一字——姓名目标未掌握的字优先，
-        // 其次复习队列；无则保持当前字（多字闭环生产链路）
+        val storeRef = this.store
         nextCharSelector = {
-            val s = store ?: com.literacy.agent.store.InMemoryStore()
-            val current = state.char   // 闭包延迟执行时 runner 已就绪（避免 apply 内自引用）
-            // review-10 P1-7：排除当前字（否则未掌握的字完成后再选自己）；fully_mastered 也算完成
+            val s = storeRef
+            val current = state.char
             fun done(c: String): Boolean =
                 s.getCharacter(c)?.deriveStatus() in setOf("mastered", "fully_mastered")
-            s.namePlan?.targetChars?.firstOrNull { c -> !done(c) && c != current }
-                ?: s.characters.keys.firstOrNull { c -> !done(c) && c != current }
+            s.namePlan?.targetChars?.firstOrNull { c: String -> !done(c) && c != current }
+                ?: s.characters.keys.firstOrNull { c: String -> !done(c) && c != current }
         }
     }
     private val intentResolver = IntentResolver()
@@ -481,18 +479,9 @@ class AgentOrchestrator(
                 // 都参与消费检查（fallback 题作答后同样一次性消费）；新题出现时旧记录作废
                 val consumedKey = exId ?: stableHash
                 if (consumedKey in consumedExerciseIds) return@let
-                consumedExerciseIds.clear()
-                // 残余修复（验收 P1）：选项乱序（正确答案不恒为首位——恒首位用户盲选即可判对，
-                // 检测与掌握度失真）；correct 字段仍指向 target，判题不受顺序影响
                 val shuffled = opts.shuffled()
-                // 残余修复（验收 P1）：fallback ID 回写——canonical show_options 可不带 exercise_id，
-                // 无 ID 时消费检查不生效，作答后下一回合旧题复活；回写后同题 ID 稳定，
-                // consumedExerciseIds 一次性消费生效（换字后选项变→哈希变→不误伤新题）
                 val effectiveId = exId ?: stableHash
                 lastExerciseId = effectiveId
-                // 残余修复（验收 P2）：题型按场景区分——READ_ONLY 学习轮选字填空=fill_blank
-                // （dimensionForPhase 同推 RECOGNIZE，但不破坏既有 fill_blank 语义）；
-                // 复习轮听音选字=audio_choice
                 lastExerciseType = if (runner.state.mode == com.literacy.agent.model.Mode.REVIEW) "audio_choice"
                     else if (runner.state.learningPath == com.literacy.agent.model.LearningPath.READ_ONLY) "fill_blank"
                     else "audio_choice"
@@ -554,7 +543,7 @@ class AgentOrchestrator(
                 if (runner.state.mode == com.literacy.agent.model.Mode.REVIEW)
                     "事件：复习会话开始，按复习阶段教学（RECALL 引导回忆不展示答案，不 show_character）"
                 else "事件：会话开始，请打招呼并开始教学"
-            is VoiceInput -> "事件：用户语音「${event.text}」（意图=${event.intent}）"
+            is VoiceInput -> "事件：用户语音（意图=${event.intent}）\n<user_text>${escapeForPromptBoundary(event.text)}</user_text>"
             is WritingEvaluated -> "事件：书写评估 ${event.phase} 分数=${event.score} 通过=${event.ok}" +
                 (if (event.issues.isNotEmpty()) " 问题=${event.issues.joinToString("；")}" else "")
             is ButtonTapped -> "事件：按钮 ${event.action}"

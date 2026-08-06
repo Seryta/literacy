@@ -29,13 +29,14 @@ class VoiceFlowCoordinator(
         val maxPrompts: Int = 2,         // 一个沉默段最多提示次数
     )
 
-    private var current: Context? = null
-    private var lastInteraction = System.currentTimeMillis()
-    private var promptCount = 0
-    private var running = false
+    @Volatile private var current: Context? = null
+    @Volatile private var lastInteraction = System.currentTimeMillis()
+    @Volatile private var promptCount = 0
+    @Volatile private var running = false
     private var loopJob: Job? = null
 
-    /** 进入新场景（页面切换/步骤变化）。 */
+    /** 进入新场景（页面切换/步骤变化）。调用方恒为主线程，ensureLoop 与 stop/resume
+     *  因此天然串行——volatile 仅保障 worker 线程对上述字段的可见性。 */
     fun setContext(ctx: Context) {
         current = ctx
         promptCount = 0

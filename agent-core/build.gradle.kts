@@ -7,6 +7,7 @@ repositories {
 }
 
 dependencies {
+    implementation("org.json:json:20240303")
     implementation("org.yaml:snakeyaml:2.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")

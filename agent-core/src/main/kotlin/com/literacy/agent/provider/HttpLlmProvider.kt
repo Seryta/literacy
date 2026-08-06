@@ -2,6 +2,9 @@ package com.literacy.agent.provider
 
 import com.literacy.agent.model.LlmOutput
 import com.literacy.agent.model.ToolCall
+import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 import org.yaml.snakeyaml.Yaml
 
 /** Provider 调用失败（网络 / 非 2xx / 响应格式错误）。上层据此走本地兜底（GT-011）。
@@ -18,6 +21,8 @@ class ProviderException(
  * - 请求：system prompt + 事件上下文作为 user 消息，要求 JSON 输出
  * - 响应：`{text, toolCalls}` 完整 JSON；text 必填校验（§3.2）
  * - 失败：网络 / 非 2xx / 解析错误 → ProviderException（不静默吞掉）
+ * - 兼容性：优先使用 response_format=json_object（OpenAI JSON mode）；若 provider 返回 400
+ *   不支持该参数，自动降级为无 response_format 的请求再试一次（不占用 §10 超时重试额度）。
  */
 class HttpLlmProvider(
     private val transport: HttpTransport,
@@ -85,13 +90,16 @@ class HttpLlmProvider(
         val baseUrl: String,          // https://api.deepseek.com（OpenAI 兼容，pi 同款格式）
         val apiKey: String,
         val model: String,
+        /** 是否启用 JSON mode（response_format=json_object）。
+         *  true 时先尝试 json_object，若 provider 不支持返回 400 会自动降级再试一次；
+         *  false 时始终不添加 response_format 参数（已知不兼容 provider 提前关闭避免降级开销）。 */
+        val useJsonMode: Boolean = true,
     ) {
         /** OpenAI 兼容 Chat Completions 端点。 */
         val chatUrl: String get() = baseUrl.trimEnd('/') + "/chat/completions"
     }
 
     override fun respond(context: Any?): LlmOutput {
-        // §10 超时重试一次：网络/超时/5xx/429 可重试；4xx/解析错误不重试（review 后实现）
         var last: ProviderException? = null
         for (attempt in 0..MAX_RETRIES) {
             try {
@@ -100,7 +108,7 @@ class HttpLlmProvider(
                 if (!e.retryable) throw e
                 last = e
                 if (attempt < MAX_RETRIES) {
-                    Thread.sleep(RETRY_DELAY_MS)   // 短暂退避后重试
+                    Thread.sleep(RETRY_DELAY_MS)
                 }
             }
         }
@@ -108,33 +116,41 @@ class HttpLlmProvider(
     }
 
     private fun doRespond(context: Any?): LlmOutput {
-        val body = buildRequestBody(context)
-        val resp = try {
-            transport.post(config.chatUrl, body, headers())
-        } catch (e: ProviderException) {
-            throw e
-        } catch (e: Exception) {
-            throw ProviderException("Provider 网络错误: ${e.message}", e, retryable = true)
+        val jsonModeFirst = config.useJsonMode
+        var last400: ProviderException? = null
+        for (useJsonMode in listOf(jsonModeFirst, false).distinct()) {
+            val body = buildRequestBody(context, useJsonMode)
+            val resp = try {
+                transport.post(config.chatUrl, body, headers())
+            } catch (e: ProviderException) {
+                throw e
+            } catch (e: Exception) {
+                throw ProviderException("Provider 网络错误: ${e.message}", e, retryable = true)
+            }
+            if (resp.statusCode !in 200..299) {
+                if (useJsonMode && resp.statusCode == 400 && jsonModeFirst) {
+                    last400 = ProviderException("Provider HTTP ${resp.statusCode}: ${resp.body.take(200)}", retryable = false)
+                    continue
+                }
+                val retryable = resp.statusCode >= 500 || resp.statusCode == 429
+                throw ProviderException("Provider HTTP ${resp.statusCode}: ${resp.body.take(200)}", retryable = retryable)
+            }
+            return parseResponse(resp.body)
         }
-        if (resp.statusCode !in 200..299) {
-            // 可重试：5xx（服务端错误）/ 429（限流）；不可重试：4xx（鉴权/参数）
-            val retryable = resp.statusCode >= 500 || resp.statusCode == 429
-            throw ProviderException("Provider HTTP ${resp.statusCode}: ${resp.body.take(200)}", retryable = retryable)
-        }
-        return parseResponse(resp.body)
+        throw last400 ?: ProviderException("Provider 调用失败", retryable = false)
     }
 
-    /** 请求体：OpenAI 兼容 messages + JSON 输出要求（完整 JSON 优先，RESEARCH-TECH）。 */
-    private fun buildRequestBody(context: Any?): String {
+    /** 请求体：OpenAI 兼容 messages；useJsonMode=true 附加 json_object response_format。 */
+    private fun buildRequestBody(context: Any?, useJsonMode: Boolean): String {
         val userContent = context?.toString() ?: ""
+        val jsonModeField = if (useJsonMode) ",\n  \"response_format\": {\"type\": \"json_object\"}" else ""
         return """
             {
               "model": ${jsonStr(config.model)},
               "messages": [
                 {"role": "system", "content": ${jsonStr(SYSTEM_PROMPT)}},
                 {"role": "user", "content": ${jsonStr(userContent)}}
-              ],
-              "response_format": {"type": "json_object"}
+              ]$jsonModeField
             }
         """.trimIndent()
     }
@@ -161,18 +177,23 @@ class HttpLlmProvider(
 
     /** 响应解析：OpenAI 兼容包装（choices[0].message.content）+ 内嵌业务 JSON {text, toolCalls}。 */
     fun parseResponse(json: String): LlmOutput {
-        val root = try {
-            Yaml().load<Any>(json) as? Map<*, *>
-        } catch (e: Exception) {
-            throw ProviderException("Provider 响应解析失败: ${e.message}")
-        } ?: throw ProviderException("Provider 响应不是 JSON 对象")
+        val rootMap: Map<*, *> = try {
+            val root = JSONTokener(json).nextValue()
+            (root as? JSONObject)?.toMutableMap()
+        } catch (_: Exception) {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    Yaml().load<Any>(json) as? Map<*, *>
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: throw ProviderException("Provider 响应解析失败: 非 JSON/YAML 对象")
 
-        // OpenAI 兼容层：choices[0].message.content（deepseek 等 openai-completions API）
-        val choices = root["choices"] as? List<*>
+        val choices = rootMap["choices"] as? List<*>
         val firstChoice = choices?.firstOrNull() as? Map<*, *>
         val message = firstChoice?.get("message") as? Map<*, *>
         val content = message?.get("content")?.toString()
-        val payload = if (content != null && content.isNotBlank()) parseContentJson(content) else root
+        val payload = if (content != null && content.isNotBlank()) parseContentJson(content) else rootMap
 
         val text = payload["text"]?.toString()?.trim() ?: ""
         if (text.isEmpty()) throw ProviderException("Provider 响应缺少 text（§3.2 text 必填）")
@@ -188,16 +209,57 @@ class HttpLlmProvider(
         return LlmOutput(text, calls)
     }
 
-    /** 解析模型输出的业务 JSON（容忍 markdown 代码块包裹）。 */
+    /** 解析模型输出的业务 JSON（容忍 markdown 代码块包裹 + 前后解释性说明文字）。 */
     private fun parseContentJson(content: String): Map<*, *> {
-        val cleaned = content.trim()
-            .removePrefix("```json").removePrefix("```")
-            .removeSuffix("```").trim()
-        val payload = try {
-            Yaml().load<Any>(cleaned) as? Map<*, *>
+        var cleaned = content.trim()
+        val fenceStart = cleaned.indexOf("```")
+        if (fenceStart >= 0) {
+            val afterFirst = cleaned.indexOf('\n', fenceStart).let { if (it < 0) fenceStart + 3 else it + 1 }
+            val fenceEnd = cleaned.indexOf("```", afterFirst)
+            if (fenceEnd > afterFirst) {
+                cleaned = cleaned.substring(afterFirst, fenceEnd).trim()
+            }
+        }
+        val braceStart = cleaned.indexOf('{')
+        val bracketStart = cleaned.indexOf('[')
+        val start = when {
+            braceStart < 0 -> bracketStart
+            bracketStart < 0 -> braceStart
+            else -> minOf(braceStart, bracketStart)
+        }
+        if (start > 0) cleaned = cleaned.substring(start)
+        val braceEnd = cleaned.lastIndexOf('}')
+        val bracketEnd = cleaned.lastIndexOf(']')
+        val end = when {
+            braceEnd < 0 -> bracketEnd
+            bracketEnd < 0 -> braceEnd
+            else -> maxOf(braceEnd, bracketEnd)
+        }
+        if (end >= 0 && end < cleaned.length - 1) cleaned = cleaned.substring(0, end + 1)
+        val parsed = try {
+            JSONTokener(cleaned).nextValue()
         } catch (e: Exception) {
             null
         }
-        return payload ?: throw ProviderException("模型输出不是业务 JSON: ${cleaned.take(200)}")
+        val map = (parsed as? JSONObject)?.toMutableMap()
+            ?: throw ProviderException("模型输出不是业务 JSON: ${cleaned.take(200)}")
+        return map
+    }
+
+    private fun JSONObject.toMutableMap(): MutableMap<String, Any?> {
+        val out = LinkedHashMap<String, Any?>(this.length())
+        for (k in this.keys()) out[k] = unwrap(this.get(k))
+        return out
+    }
+
+    private fun unwrap(v: Any?): Any? = when (v) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> v.toMutableMap()
+        is JSONArray -> {
+            val list = ArrayList<Any?>(v.length())
+            for (i in 0 until v.length()) list.add(unwrap(v.get(i)))
+            list
+        }
+        else -> v
     }
 }

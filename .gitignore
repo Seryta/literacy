@@ -9,10 +9,8 @@ android-app/local.properties
 gradle-cache/
 android_components/
 
-# ── 本地协调 / 评审（不进 git）──
+# ── 本地协调（不进 git）──
 .agent/
-reviews/
-
 # ── 本地配置 / 密钥 ──
 provider-config.json
 .env

@@ -3,7 +3,7 @@
 > 版本：v1（2026-08-03）
 > 本文档是 UI/UX 的**设计契约**：后续所有界面与交互改动必须遵循。
 > 来源：产品负责人（用户）在开发对话中逐条交代的需求，逐字整理；未实现项标注 ⏳。
-> 配套文档：[`DESIGN.md`](../DESIGN.md)（架构）、[`TEACHING-STRATEGY.md`](../TEACHING-STRATEGY.md)、[`CURRICULUM-DESIGN.md`](../CURRICULUM-DESIGN.md)、[`MASTERY-CRITERIA.md`](../MASTERY-CRITERIA.md)。
+> 配套文档：[`DESIGN.md`](../docs/DESIGN.md)（架构）、[`TEACHING-STRATEGY.md`](../docs/TEACHING-STRATEGY.md)、[`CURRICULUM-DESIGN.md`](../docs/CURRICULUM-DESIGN.md)、[`MASTERY-CRITERIA.md`](../docs/MASTERY-CRITERIA.md)。
 
 ---
 

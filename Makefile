@@ -21,8 +21,8 @@ CASES_DIR   := $(CURDIR)/test-cases
 DATA_DIR    := $(CURDIR)/data
 FIXT_DIR    := $(CURDIR)/fixtures
 
-# 录制用的 LLM 配置（provider-config.json 已在 .gitignore；key 走环境变量）
-PROVIDER_CONFIG := $(CURDIR)/provider-config.json
+# 录制用的 LLM 配置（config/provider-config.json 已在 .gitignore；key 走环境变量）
+PROVIDER_CONFIG := $(CURDIR)/config/provider-config.json
 
 .PHONY: help test build release replay record db assets pii check android-image clean-recordings
 
@@ -32,7 +32,7 @@ help:
 	@echo "  make build         Android debug APK（app-debug.apk，含模拟器架构+调试功能）"
 	@echo "  make release       Android release APK（app-release.apk，arm 裁剪+正式签名）"
 	@echo "  make replay        fixture 回放（真实 LLM 输出验证，无 fixture 时跳过）"
-	@echo "  make record        录制真实 LLM 输出为 fixture（需 DEEPSEEK_API_KEY + provider-config.json）"
+	@echo "  make record        录制真实 LLM 输出为 fixture（需 DEEPSEEK_API_KEY + config/provider-config.json）"
 	@echo "                     CASES=GT-003,GT-010 可限定用例"
 	@echo "  make db            重建字库（MZH_DIR=/path/to/makemeahanzi 指定源目录）"
 	@echo "  make pii           push 前 PII 四层检查"
@@ -71,7 +71,7 @@ replay:
 # ---- 录制真实 LLM 输出为 fixture（按需运行，需 key；CASES 可限定用例）----
 record: $(PROVIDER_CONFIG)
 	@test -n "$(DEEPSEEK_API_KEY)" || (echo "需要 DEEPSEEK_API_KEY 环境变量"; exit 1)
-	@test -f $(PROVIDER_CONFIG) || (echo "缺少 $(PROVIDER_CONFIG)（复制 provider-config.example.json）"; exit 1)
+	@test -f $(PROVIDER_CONFIG) || (echo "缺少 $(PROVIDER_CONFIG)（复制 config/provider-config.example.json 为 config/provider-config.json 并配置）"; exit 1)
 	@# P1-15 + review-09 P1-17：key 经 --env-file 传入（不展开到命令行/日志），recipe 隐藏；
 	@# mktemp 建临时文件（默认 0600，无权限窗口/符号链接竞态），trap EXIT 保证失败路径也清理
 	@tmp=$$(mktemp) && trap 'rm -f "$$tmp"' EXIT && \
@@ -85,7 +85,7 @@ record: $(PROVIDER_CONFIG)
 	rm -f "$$tmp"
 
 $(PROVIDER_CONFIG):
-	@echo "请先复制 provider-config.example.json 为 provider-config.json 并配置"
+	@echo "请先复制 config/provider-config.example.json 为 config/provider-config.json 并配置"
 	@exit 1
 
 # ---- 字库重建（MZH_DIR 指向 makemeahanzi 克隆目录）+ 同步 Android assets ----

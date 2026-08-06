@@ -91,7 +91,8 @@ docker run --rm -v gradle-cache:/home/gradle/.gradle \
 ## 真实 LLM 端到端（第七版）
 
 1. **配置化**：ProviderConfig baseUrl 驱动（兼容 pi 同款 openai-completions，deepseek 实测）；
-   配置从 provider-config.json + 环境变量取 key（key 不入 git）。
+   配置从 config/provider-config.json + 环境变量取 key（key 不入 git；
+   首次使用复制 config/provider-config.example.json）。
 2. **OpenAI 兼容解析**：实测发现 deepseek 返回标准格式（choices[0].message.content）而非顶层
    {text, toolCalls}——parseResponse 兼容包装层 + 内嵌业务 JSON（含 markdown 代码块包裹）。
 3. **真实驱动模式**：CaseRunner 注入 LlmProvider 后，触发 LLM 的事件主动调用真实模型

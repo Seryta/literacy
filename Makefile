@@ -24,12 +24,13 @@ FIXT_DIR    := $(CURDIR)/fixtures
 # 录制用的 LLM 配置（provider-config.json 已在 .gitignore；key 走环境变量）
 PROVIDER_CONFIG := $(CURDIR)/provider-config.json
 
-.PHONY: help test build replay record db assets pii check android-image clean-recordings
+.PHONY: help test build release replay record db assets pii check android-image clean-recordings
 
 help:
 	@echo "识字助手构建/测试入口（容器内执行）"
 	@echo "  make test          JVM 测试基线（agent-core 全部测试）"
-	@echo "  make build         Android APK（app-debug.apk）"
+	@echo "  make build         Android debug APK（app-debug.apk，含模拟器架构+调试功能）"
+	@echo "  make release       Android release APK（app-release.apk，arm 裁剪+正式签名）"
 	@echo "  make replay        fixture 回放（真实 LLM 输出验证，无 fixture 时跳过）"
 	@echo "  make record        录制真实 LLM 输出为 fixture（需 DEEPSEEK_API_KEY + provider-config.json）"
 	@echo "                     CASES=GT-003,GT-010 可限定用例"
@@ -45,12 +46,20 @@ test:
 		-v $(DATA_DIR):/data -v $(FIXT_DIR):/fixtures \
 		-w /workspace $(JVM_IMAGE) gradle test --no-daemon
 
-# ---- Android APK（固定签名，升级安装不冲突）----
+# ---- Android debug APK（固定签名，升级安装不冲突）----
 build:
 	docker run --rm -v $(GRADLE_CACHE):/home/gradle/.gradle \
 		-v $(CURDIR)/android-app:/workspace -v $(CORE_DIR):/agent-core \
 		-w /workspace $(ANDROID_IMG) gradle :app:assembleDebug --no-daemon
 	@echo "APK: android-app/app/build/outputs/apk/debug/app-debug.apk"
+
+# ---- Android release APK（arm64+armv7 裁剪 + release 签名；缺 keystore 门禁失败）----
+# 签名材料：android-app/keystore/release.keystore + release.properties（随机密码，gitignore）
+release:
+	docker run --rm -v $(GRADLE_CACHE):/home/gradle/.gradle \
+		-v $(CURDIR)/android-app:/workspace -v $(CORE_DIR):/agent-core \
+		-w /workspace $(ANDROID_IMG) gradle :app:assembleRelease --no-daemon
+	@echo "APK: android-app/app/build/outputs/apk/release/app-release.apk"
 
 # ---- fixture 回放（真实模型输出验证；无 fixture 时测试自动跳过）----
 replay:

@@ -1,7 +1,0 @@
-{
-  "deepseek": {
-    "baseUrl": "https://api.deepseek.com",
-    "model": "deepseek-v4-flash",
-    "apiKeyEnv": "DEEPSEEK_API_KEY"
-  }
-}

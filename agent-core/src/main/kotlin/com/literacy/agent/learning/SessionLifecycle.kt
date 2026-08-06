@@ -23,7 +23,8 @@ class SessionLifecycle(private val store: LearningStore) {
         store.latestSession()?.let { last ->
             if (last.status == "active") store.updateSession(last.id) { it.copy(status = "aborted") }
         }
-        return store.insertSession(Session(date = date, startedAt = startedAt, status = "active"))
+        val actualDate = if ('T' in startedAt) startedAt.take(10) else date
+        return store.insertSession(Session(date = actualDate, startedAt = startedAt, status = "active"))
     }
 
     /** §1.2：当天复习队列（排序：出错 > 过期 > 层内最弱维度）。 */

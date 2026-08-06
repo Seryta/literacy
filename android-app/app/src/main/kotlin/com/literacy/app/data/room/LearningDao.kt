@@ -60,8 +60,10 @@ interface LearningDao {
     )
 
     /** P1-4：统计查询（本 session 已学字 / 复习字）。 */
-    @Query("SELECT COUNT(DISTINCT char) FROM session_character_results WHERE sessionId = :sid AND phase NOT IN ('assess','reinforce')")
-    fun countLearnedChars(sid: Int): Int   // P2-A：新学字口径，复习字只计 charsReviewed（review-08）
+    @Query("""SELECT COUNT(DISTINCT char) FROM session_character_results
+        WHERE sessionId = :sid AND phase NOT IN ('assess','reinforce','skip')
+        AND (score IS NULL OR score >= 0.6)""")
+    fun countLearnedChars(sid: Int): Int
 
     @Query("SELECT COUNT(DISTINCT char) FROM session_character_results WHERE sessionId = :sid AND phase IN ('assess','reinforce')")
     fun countReviewedChars(sid: Int): Int
@@ -79,11 +81,17 @@ interface LearningDao {
         val started = getSessionStartedAt(id)
         val duration = started?.let { s ->
             try {
-                val start = java.time.LocalTime.parse(s)
-                val end = java.time.LocalTime.parse(endedAt)
-                var secs = java.time.Duration.between(start, end).seconds
-                if (secs < 0) secs += 24 * 3600L   // P2-B：跨天（23:00→次日00:30）补一天，不再 coerce 成 0
-                secs.toInt()
+                if ('T' in s && 'T' in endedAt) {
+                    val start = java.time.LocalDateTime.parse(s)
+                    val end = java.time.LocalDateTime.parse(endedAt)
+                    java.time.Duration.between(start, end).seconds.toInt().coerceAtLeast(0)
+                } else {
+                    val start = java.time.LocalTime.parse(s)
+                    val end = java.time.LocalTime.parse(endedAt)
+                    var secs = java.time.Duration.between(start, end).seconds
+                    if (secs < 0) secs += 24 * 3600L
+                    secs.toInt()
+                }
             } catch (e: Exception) { 0 }
         } ?: 0
         updateSessionFull(id, "completed", endedAt, highlights, struggles, learned, reviewed, namePlanProgress, duration)

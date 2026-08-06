@@ -165,7 +165,7 @@ class ReplayRunner(
      */
     fun sessionRefresh(
         date: String = java.time.LocalDate.now().toString(),
-        startedAt: String = java.time.LocalTime.now().toString(),
+        startedAt: String = java.time.LocalDateTime.now().toString(),
     ): Session {
         val s = SessionLifecycle(store).startSession(date, startedAt)
         boundSessionId = s.id
@@ -577,11 +577,11 @@ class ReplayRunner(
     fun completeSession(highlights: String?, struggles: String?, namePlanProgress: String?) {
         sessionEnded = true
         val boundId = boundSessionId
-        val last = boundId?.let { store.sessions.find { s -> s.id == it } } ?: store.latestSession()   // P1-10：结束绑定本 runner 的 session
+        val last = boundId?.let { store.sessions.find { s -> s.id == it } } ?: store.latestSession()
         if (last != null) {
             store.completeSession(
                 last.id,
-                endedAt = java.time.LocalTime.now().toString(),
+                endedAt = java.time.LocalDateTime.now().toString(),
                 highlights = highlights ?: last.highlights,
                 struggles = struggles ?: last.struggles,
                 namePlanProgress = namePlanProgress ?: last.namePlanProgress,

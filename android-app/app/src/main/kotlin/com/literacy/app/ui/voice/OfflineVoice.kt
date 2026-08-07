@@ -313,6 +313,7 @@ class OfflineVoiceEngine(
     @Volatile private var autoRestart = false
     @Volatile private var onResult: ((String) -> Unit)? = null
     @Volatile private var onPartialCb: ((String) -> Unit)? = null   // 实时字幕回调（成员保存：initStt 重建后恢复监听不丢）
+    @Volatile private var onErrorCb: ((String) -> Unit)? = null     // 错误回调（短语音/无结果时给上层提示，避免表现"没听见"）
     @Volatile private var listenThread: Thread? = null   // 采集线程（start 前 join 旧线程，避免并发操作 recognizer 崩溃）
 
     fun initStt() {
@@ -396,6 +397,7 @@ class OfflineVoiceEngine(
         onResultText: (String) -> Unit,
         onPartial: (String) -> Unit = {},
         autoRestart: Boolean = false,
+        onError: (String) -> Unit = {},
     ): Boolean {
         // 引擎捕获 + 旧线程 join + worker 启动在 sttLock 内原子完成——
         // initStt 的释放/重建与这里互斥：initStt 要么在锁外等 worker 退出后再释放，
@@ -411,6 +413,7 @@ class OfflineVoiceEngine(
             }
             this.onResult = onResultText
             this.onPartialCb = onPartial
+            this.onErrorCb = onError
             this.autoRestart = autoRestart
             var generation = 0
             sttState.start { generation = it }   // 新一代监听：复位 + 递增代次（旧代在途回调作废）
@@ -535,6 +538,14 @@ class OfflineVoiceEngine(
                                 mainHandler.post { if (gen == sttState.currentGeneration()) onResult?.invoke(t) }
                             } else {
                                 Log.d(tag, "识别超时/无结果（静音或过短 speechMs=$speechMs）")
+                                // 太短/无结果但没在播放 TTS 时给上层提示，否则表现"说什么都没听见"
+                                // （ttsPlaying 时的丢弃是正常防回声，静默吞即可）
+                                if (!ttsPlaying && speechMs in 1..<300L) {
+                                    val gen0 = generation
+                                    mainHandler.post {
+                                        if (gen0 == sttState.currentGeneration()) onErrorCb?.invoke("没听清再说一遍")
+                                    }
+                                }
                             }
                             if (!autoRestart) break   // 不自动重听则结束
                         } finally {

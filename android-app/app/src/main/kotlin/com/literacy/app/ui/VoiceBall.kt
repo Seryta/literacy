@@ -55,21 +55,26 @@ class SpeechInputManager(context: Context) {
         onPartial: ((String) -> Unit)? = null,
     ): Boolean {
         // 离线 STT 优先（模型就绪）：流式识别 + 实时字幕（onPartial 由引擎 partial 回调驱动）
+        var offlineOk = false
         if (VoiceHub.offlineSttReady) {
             this.autoRestart = autoRestart
             this.cancelled = false
             onResult = callback
             this.onPartial = onPartial
             val gen = ++generation   // 新一代监听
-            return VoiceHub.offline.startListening(
-                // 引擎已在主线程 post + 代次校验（listenGeneration），此处直接回调不再二次 post
-                // （二次 post 会在引擎校验与执行之间重新打开取消穿透窗口）；manager 代次再兜一层
+            offlineOk = VoiceHub.offline.startListening(
                 onResultText = { text -> if (gen == generation) callback(SpeechOutcome.Text(text)) },
                 onPartial = { p -> if (gen == generation) onPartial?.invoke(p) },
                 autoRestart = autoRestart,
+                onError = { msg -> if (gen == generation) callback(SpeechOutcome.Error(msg)) },
             )
+            if (offlineOk) return true
+            // 离线 STT 偶发启动失败（旧采集线程还活着 / AudioRecord 未初始化）：
+            // 静默降级到系统 SpeechRecognizer，不再直接 return false（否则表现"怎么说都没反应"，
+            // 连兜底提示都没有），失败的 generation++ 使上面注册的离线回调不穿透新系统监听。
+            ++generation
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(appContext)) return false
+        if (!SpeechRecognizer.isRecognitionAvailable(appContext)) return offlineOk
         this.autoRestart = autoRestart
         this.cancelled = false
         onResult = callback

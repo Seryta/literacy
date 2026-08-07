@@ -66,8 +66,7 @@ class VoiceFlowCoordinator(
                 val silentMs = System.currentTimeMillis() - lastInteraction
                 if (silentMs > ctx.idleDelayMs && promptCount < ctx.maxPrompts) {
                     promptCount++
-                    speak(ctx.idlePrompt)
-                    lastInteraction = System.currentTimeMillis()
+                    onSpeak(ctx.idlePrompt)
                 }
             }
         }

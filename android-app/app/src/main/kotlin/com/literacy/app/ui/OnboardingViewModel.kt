@@ -13,20 +13,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 首次引导（onboarding）状态机：活泼机器人引导新用户完成建档。
+ * 首次引导（onboarding）状态机：活泼机器人引导新用户完成建档 + LLM 配置。
  *
- * 流程：语音包准备（第一屏，不可跳过）→ 选宠物（说"第几个"或点击）→ 问姓名（语音/输入）→
- *       确认姓名（3 次未确认 → 输入兜底）→ 引导开始学习（说"开始"或点击）
+ * 流程：语音包准备（第一屏，不可跳过）→ 选宠物 → 问姓名 → 确认姓名
+ *       → **AI 老师配置（填 API key / baseUrl / model，不可跳过）** → 引导开始学习（说"开始"或点击）
  *
- * 全程本地驱动（不依赖 LLM/API key——onboarding 时 key 可能还没配），
- * 语音转写由 MainActivity 的 SpeechInputManager 提供，经 [handleVoice] 进入。
+ * AI 老师配置放在姓名之后、开始学习之前——后面的 LearnScreen 教学管线需要 LLM
+ * 才能评估书写/出反馈；因此首次引导必须完成配置后才能进入学习。
  */
 class OnboardingViewModel(
     private val settings: AppSettings,
     private val store: com.literacy.agent.store.LearningStore,
 ) : ViewModel() {
 
-    enum class Step { VOICE_PREP, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, GUIDE_START, DONE }
+    enum class Step { VOICE_PREP, PICK_MASCOT, ASK_NAME, CONFIRM_NAME, FALLBACK_INPUT, CONFIG_LLM, GUIDE_START, DONE }
 
     data class ObState(
         val step: Step = Step.VOICE_PREP,
@@ -40,9 +40,12 @@ class OnboardingViewModel(
         val voiceDownloading: Boolean = false,      // 语音包下载中
         val voiceDownloadProgress: Int = 0,         // 0..100
         val voiceDownloadDone: Boolean = false,     // 本次引导内是否已下载完成
-        val voiceFailCount: Int = 0,                // 语音包下载失败次数（>=2 出现弱化系统语音出口）
+        val voiceFailCount: Int = 0,                // 语音包下载失败次数（用于提示检查网络后重试）
         val voiceModelsReady: Boolean = false,      // 模型是否已就绪
         val voiceError: String = "",                // 最近一次下载失败的具体原因（排查用）
+        val tempApiKey: String = "",                // CONFIG_LLM 临时编辑态（不写 settings 直到点保存）
+        val tempBaseUrl: String = "",
+        val tempModel: String = "",
     )
 
     var ui by mutableStateOf(ObState())
@@ -71,7 +74,7 @@ class OnboardingViewModel(
     }
 
     // ── 步骤推进 ────────────────────────────────────────────────────
-    /** 语音包准备（第一屏，不可跳过）：就绪直接过，未就绪下载（失败重试，2 次后弱化系统语音出口）。 */
+    /** 语音包准备（第一屏，不可跳过）：就绪直接过，未就绪下载并在失败后重试。 */
     private fun goVoicePrep() {
         clearPartial()
         val ready = VoiceHub.modelManager.ttsReady() && VoiceHub.modelManager.sttReady()
@@ -94,7 +97,7 @@ class OnboardingViewModel(
         clearPartial()
         ui = ui.copy(
             step = Step.PICK_MASCOT,
-            robotText = "你喜欢哪一个？说“第几个”，比如“第一个”；也可以直接点卡片。不喜欢挑的话，说“随便”就用小绿。",
+            robotText = "你喜欢哪一个？说“第几个”，比如“第一个”；也可以直接点卡片。选好一个，我们再继续。",
             showOptions = emptyList(),
             showInput = false,
         )
@@ -132,6 +135,47 @@ class OnboardingViewModel(
         )
     }
 
+    /** AI 老师配置（CONFIG_LLM）：放在姓名之后、开始学习之前——后面 LearnScreen 教学管线
+     *  需要 LLM，引导时由家人一次填写完成。 */
+    private fun goConfigLlm() {
+        clearPartial()
+        val hasKey = settings.hasApiKey
+        ui = ui.copy(
+            step = Step.CONFIG_LLM,
+            robotText = if (hasKey) {
+                "之前已经填好 AI 老师啦！确认没问题后，请让家人点保存并继续；要改也可以在这里修改。"
+            } else {
+                "接下来让家人帮忙填一下 AI 老师的 Key、地址和模型。填好后，我才能陪你认字和反馈。"
+            },
+            tempApiKey = settings.apiKey,
+            tempBaseUrl = settings.baseUrl,
+            tempModel = settings.model,
+            showOptions = emptyList(),
+            showInput = false,
+        )
+    }
+
+    /** 用户在 CONFIG_LLM 步修改表单（临时编辑态，不写入 settings）。 */
+    fun onTypedLlmConfig(apiKey: String, baseUrl: String, model: String) {
+        ui = ui.copy(tempApiKey = apiKey, tempBaseUrl = baseUrl, tempModel = model)
+    }
+
+    /** 保存 LLM 配置并进入 GUIDE_START；key 加密失败返回 false，UI 会提示。 */
+    fun onSaveLlmConfig(apiKey: String, baseUrl: String, model: String): Boolean {
+        val cleanBase = baseUrl.trim().ifEmpty { settings.baseUrl }
+        val cleanModel = model.trim().ifEmpty { settings.model }
+        if (apiKey.isBlank()) {
+            ui = ui.copy(robotText = "请先填写 AI 老师的 API Key，填好后才能继续。")
+            return false
+        }
+        val keySaved = settings.saveApiKey(apiKey.trim())
+        if (!keySaved) return false
+        settings.baseUrl = cleanBase
+        settings.model = cleanModel
+        goGuideStart()
+        return true
+    }
+
     private fun goGuideStart() {
         clearPartial()
         if (ui.pendingName.isEmpty()) {
@@ -152,11 +196,10 @@ class OnboardingViewModel(
         clearPartial()   // 回合结束收起实时字幕
         when (ui.step) {
             Step.VOICE_PREP -> {
-                // 语音包准备：不可跳过（下载/重试；失败 2 次后才允许"用系统"弱化出口）
+                // 语音包准备：不可跳过（下载/重试）。
                 if (!ui.voiceDownloading) {
                     when (OnboardingVoiceRules.voicePrepIntent(text, ui.voiceFailCount)) {
                         VoicePrepIntent.DOWNLOAD -> startVoiceDownload()
-                        VoicePrepIntent.USE_SYSTEM -> useSystemVoice()
                         VoicePrepIntent.REFUSE ->
                             ui = ui.copy(robotText = "语音老师很重要，先下载好再开始，建议连 Wi-Fi。")
                         VoicePrepIntent.NONE ->
@@ -165,21 +208,16 @@ class OnboardingViewModel(
                 }
             }
             Step.PICK_MASCOT -> {
-                // 可跳过：说"随便/跳过/默认"用小绿
                 val idx = pickMascotIndex(text)
                 when {
                     idx != null -> onSelectMascot(idx)
-                    text.contains("随便") || text.contains("跳过") || text.contains("默认") || text.contains("都可以") -> {
-                        ui = ui.copy(mascotIndex = 0)
-                        goAskName("好！那就用${Mascots.candidates[0].variant.label}。那……你叫什么名字呀？说给我听，或者点下面的框打出来。，不想录也可以说“跳过”")
-                    }
-                    else -> ui = ui.copy(robotText = "没听清你说的是第几个，再说一次，比如“第一个”。不想挑就说“随便”。")
+                    else -> ui = ui.copy(robotText = "没听清你说的是第几个，再说一次，比如“第一个”。选好一个我们再继续。")
                 }
             }
             Step.ASK_NAME -> {
-                // 可跳过：说"跳过/以后/先不录" → 直接完成（首页建档卡引导）
+                // 可跳过：说"跳过/以后/先不录" → 进 AI 老师配置（没 key 临时也可跳），到最后再 finish
                 if (text.contains("跳过") || text.contains("以后") || text.contains("先不") || text.contains("不录") || text.contains("不用")) {
-                    goGuideStart()   // pendingName 空 → finishDirect
+                    goConfigLlm()
                     return
                 }
                 val name = extractName(text)
@@ -199,7 +237,16 @@ class OnboardingViewModel(
             }
             Step.FALLBACK_INPUT -> {
                 val name = extractName(text)
-                if (name.isNotEmpty()) { ui = ui.copy(pendingName = name); goGuideStart() }
+                if (name.isNotEmpty()) { ui = ui.copy(pendingName = name); goConfigLlm() }
+            }
+            Step.CONFIG_LLM -> {
+                // 确认保存/填好了
+                if (text.contains("保存") || text.contains("填好") || text.contains("好了") || text.contains("完成") || text.contains("下一步") || text.contains("继续")) {
+                    val ok = onSaveLlmConfig(ui.tempApiKey, ui.tempBaseUrl, ui.tempModel)
+                    if (!ok && ui.robotText.isBlank()) ui = ui.copy(robotText = "保存失败：请检查设备安全设置后重试。")
+                    return
+                }
+                ui = ui.copy(robotText = "请让家人在下面填一下 API Key、Base URL、模型；填好后说“保存”或点保存并继续。")
             }
             Step.GUIDE_START -> {
                 // 否定/延后词优先（"晚点再学"/"等一会再学"不能被"学"误判为开始）
@@ -225,8 +272,8 @@ class OnboardingViewModel(
         when (ui.step) {
             Step.CONFIRM_NAME -> onConfirmName(label == "对")
             Step.GUIDE_START -> finish(startNow = label == "开始学习")
-            // VOICE_PREP 步无选项按钮：下载/重试/系统语音按钮在 UI 直接调 startVoiceDownload/useSystemVoice，不走此入口
-            Step.ASK_NAME -> if (label == "先不录名字") goGuideStart()   // 跳过姓名 → finishDirect
+            // VOICE_PREP 步无选项按钮：下载/重试按钮在 UI 直接调 startVoiceDownload，不走此入口
+            Step.ASK_NAME -> if (label == "先不录名字") goConfigLlm()
             else -> {}
         }
     }
@@ -237,14 +284,14 @@ class OnboardingViewModel(
         ui = ui.copy(pendingName = clean)
         when (ui.step) {
             Step.ASK_NAME -> goConfirmName()
-            Step.FALLBACK_INPUT -> goGuideStart()
+            Step.FALLBACK_INPUT -> goConfigLlm()
             else -> {}
         }
     }
 
     fun onConfirmName(yes: Boolean) {
         if (yes) {
-            goGuideStart()
+            goConfigLlm()
         } else {
             val attempts = ui.confirmAttempts + 1
             ui = ui.copy(confirmAttempts = attempts)
@@ -321,7 +368,7 @@ class OnboardingViewModel(
                 ui = ui.copy(voiceDownloading = false, voiceDownloadProgress = 100, voiceDownloadDone = true, voiceModelsReady = true)
                 goPickMascot()
             } catch (e: Exception) {
-                // 下载失败：计数，提供重试；2 次后出现弱化"暂时用系统语音"出口
+                // 下载失败：记录原因并引导联网后重试。
                 val failCount = ui.voiceFailCount + 1
                 ui = ui.copy(
                     voiceDownloading = false,
@@ -331,12 +378,6 @@ class OnboardingViewModel(
                 )
             }
         }
-    }
-
-    /** 失败 2 次后的弱化出口：暂时用系统语音（下载完成自动切回离线；首页语音包卡常驻提醒）。 */
-    fun useSystemVoice() {
-        if (ui.voiceDownloading) return
-        goPickMascot()
     }
 
     // ── 语音解析（本地规则，不依赖 LLM） ────────────────────────────
@@ -350,7 +391,7 @@ class OnboardingViewModel(
 }
 
 /** 语音包准备步（VOICE_PREP）的语音意图。 */
-enum class VoicePrepIntent { DOWNLOAD, USE_SYSTEM, REFUSE, NONE }
+enum class VoicePrepIntent { DOWNLOAD, REFUSE, NONE }
 
 /** 引导语音解析规则（纯 Kotlin，可 JVM 单元测试）。 */
 object OnboardingVoiceRules {
@@ -388,7 +429,6 @@ object OnboardingVoiceRules {
             text.contains("想想") || text.contains("考虑") || text.contains("等") ||
             text.contains("以后") || text.contains("跳过") || text.contains("不") -> VoicePrepIntent.REFUSE
         text.contains("下载") || text.contains("好") || text.contains("要") || text.contains("重试") -> VoicePrepIntent.DOWNLOAD
-        text.contains("系统") && voiceFailCount >= 2 -> VoicePrepIntent.USE_SYSTEM
         else -> VoicePrepIntent.NONE
     }
 }

@@ -97,7 +97,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
     val voiceFlow = remember {
         com.literacy.app.ui.voice.VoiceFlowCoordinator(flowScope) { text ->
             flowTts.speak(text)
-            // 主动沟通同时界面可见（TTS 无声时文字兜底，且便于诊断协调器是否触发）
             scope.launch { snackbarHostState.showSnackbar(text, duration = androidx.compose.material3.SnackbarDuration.Short) }
         }
     }
@@ -105,6 +104,21 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
 
     // 语音引擎状态可见（诊断 + 用户知情）：首页语音包卡用；此处仅日志
     fun markInteraction() = voiceFlow.onUserInteraction()
+    /** 引导 step 切换时更新 VoiceFlow 的 idlePrompt/延迟：不同阶段说不同的话，
+     *  避免 PICK_MASCOT 过了还在播"第一个"的过时通用提示。 */
+    fun updateOnboardingFlow(step: OnboardingViewModel.Step?, hasApiKey: Boolean) {
+        if (step == null) return
+        val (prompt, delayMs, max) = when (step) {
+            OnboardingViewModel.Step.VOICE_PREP -> Triple("说下载开始下载语音包；如需切换 Wi-Fi，网络恢复后再说下载", 14_000L, 1)
+            OnboardingViewModel.Step.PICK_MASCOT -> Triple("说第几个选宠物，比如第一个", 12_000L, 2)
+            OnboardingViewModel.Step.ASK_NAME, OnboardingViewModel.Step.FALLBACK_INPUT -> Triple("告诉我你叫什么名字，比如我叫张建国；不想录可以说跳过", 12_000L, 2)
+            OnboardingViewModel.Step.CONFIRM_NAME -> Triple("说对或不对，确认一下听到的名字", 10_000L, 2)
+            OnboardingViewModel.Step.CONFIG_LLM -> Triple(if (hasApiKey) "请确认 AI 老师配置后保存并继续" else "请让家人帮忙填写 AI 老师的配置，填好后保存并继续", 20_000L, 1)
+            OnboardingViewModel.Step.GUIDE_START -> Triple("说开始我们就开始学名字；或说等一会", 12_000L, 2)
+            else -> Triple("想说什么直接说就行", 15_000L, 1)
+        }
+        voiceFlow.setContext(com.literacy.app.ui.voice.VoiceFlowCoordinator.Context("onboarding:$step", prompt, delayMs, max))
+    }
 
     // 自动监听启动器（引导/学习页共用）：连续监听 + 实时字幕 + 硬错误降级
     val startAutoListen = remember {
@@ -145,13 +159,6 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
             autoListenRestart.value = null
         }
         when {
-            needOnboarding -> voiceFlow.setContext(
-                com.literacy.app.ui.voice.VoiceFlowCoordinator.Context(
-                    key = "onboarding",
-                    idlePrompt = "你可以直接说话，比如：第一个，或者下载语音包",
-                    idleDelayMs = 10_000, maxPrompts = 2,
-                )
-            )
             screen == Screen.LEARN -> voiceFlow.setContext(
                 com.literacy.app.ui.voice.VoiceFlowCoordinator.Context(
                     key = "learn",
@@ -164,6 +171,13 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     key = "home",
                     idlePrompt = "想学什么可以告诉我，比如：我想学家",
                     idleDelayMs = 60_000, maxPrompts = 1,
+                )
+            )
+            needOnboarding -> voiceFlow.setContext(
+                com.literacy.app.ui.voice.VoiceFlowCoordinator.Context(
+                    key = "onboarding:init",
+                    idlePrompt = "说下载开始下载语音包，或说第一个选宠物",
+                    idleDelayMs = 12_000, maxPrompts = 2,
                 )
             )
             else -> voiceFlow.setContext(
@@ -293,6 +307,8 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                         settings.onboardingDone = true
                         needOnboarding = false
                     },
+                    onStepChanged = { step -> updateOnboardingFlow(step, settings.hasApiKey) },
+                    onRobotSpeak = { markInteraction() },
                 )
             } else {
             when (screen) {
@@ -402,6 +418,7 @@ private fun LiteracyApp(settings: AppSettings, hanzi: HanziDataSource, store: co
                     }
                     SettingsScreen(
                         settings = settings,
+                        tts = flowTts,
                         onBack = { screen = Screen.HOME },
                         onOpenAbout = { screen = Screen.ABOUT },
                         onOpenMascot = { screen = Screen.MASCOT },

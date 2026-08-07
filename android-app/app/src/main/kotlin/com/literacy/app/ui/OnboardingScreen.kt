@@ -1,5 +1,6 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -8,6 +9,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,36 +27,56 @@ import androidx.compose.ui.unit.sp
 import com.literacy.app.ui.theme.LiteracyDimens
 import com.literacy.app.ui.voice.VoiceHub
 
-/**
- * 首次引导页：活泼机器人对话式建档。
- * 流程由 [OnboardingViewModel] 状态机驱动；机器人说话（TTS）+ 气泡文字同步。
- */
 @Composable
 fun OnboardingScreen(
     viewModel: OnboardingViewModel,
     listening: Boolean,
     onSkip: () -> Unit,
+    onStepChanged: (OnboardingViewModel.Step) -> Unit = {},
+    onRobotSpeak: () -> Unit = {},
 ) {
+    BackHandler(onBack = onSkip)
     val ui = viewModel.ui
     val stepOrder = listOf(
         OnboardingViewModel.Step.PICK_MASCOT,
         OnboardingViewModel.Step.ASK_NAME,
         OnboardingViewModel.Step.CONFIRM_NAME,
+        OnboardingViewModel.Step.CONFIG_LLM,
         OnboardingViewModel.Step.GUIDE_START,
     )
     val currentStepIndex = stepOrder.indexOf(ui.step).coerceAtLeast(0)
+
+    // 引导 step 变化 → 通知 MainActivity 更新 VoiceFlow 的 idlePrompt（分阶段说不同的话，
+    // 避免 PICK_MASCOT 过了还在说"第一个"的通用提示 + 循环播报）
+    LaunchedEffect(ui.step) { onStepChanged(ui.step) }
 
     // TTS：机器人说话（生命周期随页面）
     val context = androidx.compose.ui.platform.LocalContext.current
     val tts = remember { LocalTts(context) }
     DisposableEffect(Unit) { onDispose { tts.shutdown() } }
-    // robotText 变化 → 朗读（气泡文字始终可见，TTS 失败不阻断）
+    // robotText 变化 → 朗读 + 重置沉默计时（机器人说话算主动沟通，不被自己的 TTS 触发沉默提示循环）
     LaunchedEffect(ui.robotText) {
-        if (ui.robotText.isNotBlank()) tts.speak(ui.robotText)
+        if (ui.robotText.isNotBlank()) {
+            tts.speak(ui.robotText)
+            onRobotSpeak()
+        }
     }
     // 用户开口（实时转写非空）→ 打断机器人说话，让位给用户（实时对话）
     LaunchedEffect(viewModel.partialText) {
         if (viewModel.partialText.isNotBlank()) tts.stop()
+    }
+    // 说明文字点读：所有说明/帮助/占位 Text 统一包一层可点击 → TTS 朗读（修 3：点击说明无语音）
+    val TtsHelpText: @Composable (String, androidx.compose.ui.text.TextStyle, Color) -> Unit = { text, style, color ->
+        Text(
+            text = text,
+            style = style,
+            color = color,
+            modifier = Modifier.clickable(
+                onClick = { tts.speak(text) },
+                indication = null,
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+            ),
+        )
     }
 
     // 机器人浮动动画（活泼感）
@@ -185,11 +208,94 @@ fun OnboardingScreen(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text(
+            TtsHelpText(
                 "从上往下数，说“第几个”也可以选，比如“第一个”",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                MaterialTheme.typography.bodySmall,
+                MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        // ── 配置 AI 老师（CONFIG_LLM）：baseUrl+model+apiKey，首次引导必须完成 ──
+        if (ui.step == OnboardingViewModel.Step.CONFIG_LLM) {
+            Spacer(Modifier.height(20.dp))
+            var apiKey by remember { mutableStateOf(ui.tempApiKey) }
+            var baseUrl by remember { mutableStateOf(ui.tempBaseUrl) }
+            var model by remember { mutableStateOf(ui.tempModel) }
+            var saved by remember { mutableStateOf(false) }
+            var saveFailed by remember { mutableStateOf(false) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+            ) {
+                Column(Modifier.padding(LiteracyDimens.CardPadding)) {
+                    Text("AI 老师配置", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    TtsHelpText(
+                        "首次使用请由家人帮忙填一次；保存后才能继续学习",
+                        MaterialTheme.typography.bodySmall,
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = {
+                            apiKey = it; saved = false; saveFailed = false
+                            viewModel.onTypedLlmConfig(apiKey = it, baseUrl = baseUrl, model = model)
+                        },
+                        label = { Text("API Key") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                    )
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = {
+                            baseUrl = it; saved = false
+                            viewModel.onTypedLlmConfig(apiKey = apiKey, baseUrl = it, model = model)
+                        },
+                        label = { Text("Base URL") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        shape = MaterialTheme.shapes.small,
+                    )
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = {
+                            model = it; saved = false
+                            viewModel.onTypedLlmConfig(apiKey = apiKey, baseUrl = baseUrl, model = it)
+                        },
+                        label = { Text("模型") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        shape = MaterialTheme.shapes.small,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val ok = viewModel.onSaveLlmConfig(apiKey, baseUrl, model)
+                            saved = ok; saveFailed = !ok
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(LiteracyDimens.ActionButtonHeight),
+                        shape = MaterialTheme.shapes.large,
+                    ) { Text("保存并继续", fontSize = 20.sp) }
+                    if (saved) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("已保存，仅存本机", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (saveFailed) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("保存失败：加密存储不可用，请检查设备安全存储",
+                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
 
         // ── 选项按钮 ──
@@ -229,10 +335,10 @@ fun OnboardingScreen(
                 enabled = name.isNotBlank(),
             ) { Text("确定", fontSize = 18.sp) }
             Spacer(Modifier.height(8.dp))
-            Text(
+            TtsHelpText(
                 "也可以直接说：我叫张建国",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                MaterialTheme.typography.bodySmall,
+                MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // 姓名可跳过（ASK_NAME 步）："先不录名字" → 直接完成引导（首页建档卡引导）
             if (ui.step == OnboardingViewModel.Step.ASK_NAME) {
@@ -279,10 +385,10 @@ fun OnboardingScreen(
                 Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                     Text("语音老师准备", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(8.dp))
-                    Text(
+                    TtsHelpText(
                         "下载语音包：女声朗读 + 离线识别，约 210MB，建议连 Wi-Fi",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        MaterialTheme.typography.bodyLarge,
+                        MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(14.dp))
                     if (ui.voiceDownloading) {
@@ -293,12 +399,11 @@ fun OnboardingScreen(
                         Spacer(Modifier.height(6.dp))
                         Text("下载中… ${ui.voiceDownloadProgress}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     } else if (ui.voiceFailCount > 0) {
-                        // 下载失败：重试为主；失败 2 次后才出现弱化"暂时用系统语音"出口
-                        Text(
+                        // 下载失败后说明原因并提供重试；离线语音包仍是进入下一步的前提。
+                        TtsHelpText(
                             "下载失败，请检查网络和 Wi-Fi 后再试。",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error,
+                            MaterialTheme.typography.bodyLarge + androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Bold),
+                            MaterialTheme.colorScheme.error,
                         )
                         if (ui.voiceError.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
@@ -316,16 +421,6 @@ fun OnboardingScreen(
                                 .height(56.dp),
                             shape = MaterialTheme.shapes.large,
                         ) { Text("重试下载", fontSize = 18.sp) }
-                        if (ui.voiceFailCount >= 2) {
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = { viewModel.useSystemVoice() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = MaterialTheme.shapes.large,
-                            ) { Text("暂时用系统语音", fontSize = 16.sp) }
-                        }
                     } else {
                         Button(
                             onClick = { viewModel.startVoiceDownload() },
@@ -341,8 +436,7 @@ fun OnboardingScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        // 引导不可整体跳过（硬性规定）：只能跳过当前步骤（选宠物/姓名），
-        // 语音包准备与整体引导都不提供跳过入口
+        // 引导不可整体跳过：选宠物、语音包和 AI 配置必须完成；姓名可推迟。
         Spacer(Modifier.height(16.dp))
     }
 }

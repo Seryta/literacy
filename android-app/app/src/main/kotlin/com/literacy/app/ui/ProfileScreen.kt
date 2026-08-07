@@ -1,5 +1,6 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,8 @@ fun ProfileScreen(
     settings: com.literacy.app.settings.AppSettings,
     onComplete: () -> Unit,
 ) {
+    BackHandler(onBack = onComplete)
+
     var name by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }

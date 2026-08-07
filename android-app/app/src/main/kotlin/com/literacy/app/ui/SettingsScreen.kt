@@ -1,5 +1,8 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,19 +14,18 @@ import androidx.compose.ui.unit.sp
 import com.literacy.app.settings.AppSettings
 import com.literacy.app.ui.theme.LiteracyDimens
 
-/**
- * 设置页：LLM Provider 配置（API key / baseUrl / model）。
- * key 仅存本机（SharedPreferences），不上传。
- * 开发模式（debug 直达学习阶段）也收纳在此，普通用户不可见。
- */
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
+    tts: LocalTts,
     onBack: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenMascot: () -> Unit,
     onDebugStartLearning: ((String) -> Unit)? = null,   // debug 构建的直达学习入口
 ) {
+    BackHandler(onBack = onBack)
+
+    val noIndication = remember { MutableInteractionSource() }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var baseUrl by remember { mutableStateOf(settings.baseUrl) }
     var model by remember { mutableStateOf(settings.model) }
@@ -47,10 +49,12 @@ fun SettingsScreen(
             Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                 Text("AI 老师配置", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
+                val firstUseHint = "首次使用需要由家人帮忙配置一次"
                 Text(
-                    "首次使用需要由家人帮忙配置一次",
+                    firstUseHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { tts.speak(firstUseHint) },
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -109,11 +113,12 @@ fun SettingsScreen(
                 }
 
                 Spacer(Modifier.height(12.dp))
+                val privacyHint = "说明：API Key 仅存储在本机，用于调用 AI 老师。默认 deepseek，OpenAI 兼容格式，支持改为其他兼容 Provider。"
                 Text(
-                    "说明：API Key 仅存储在本机，用于调用 AI 老师。\n" +
-                        "默认 deepseek，OpenAI 兼容格式，支持改为其他兼容 Provider。",
+                    privacyHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { tts.speak(privacyHint) },
                 )
             }
         }
@@ -159,10 +164,12 @@ fun SettingsScreen(
             Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                 Text("关于", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
+                val versionHint = "版本 0.1.0 · 开源（MIT）  第三方数据与许可声明"
                 Text(
-                    "版本 0.1.0 · 开源（MIT）\n第三方数据与许可声明",
+                    versionHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { tts.speak(versionHint) },
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(

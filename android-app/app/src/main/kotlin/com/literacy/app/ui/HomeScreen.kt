@@ -1,6 +1,8 @@
 package com.literacy.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,12 +21,6 @@ import com.literacy.agent.data.HanziDataSource
 import com.literacy.app.ui.theme.LiteracyDimens
 import kotlinx.coroutines.launch
 
-/**
- * 首页：极简卡片式（目标用户不认识字——东西少、每卡只做一件事）。
- * - 卡片点击 = 朗读卡片内容（TTS 点读，页面文字都说给用户听）
- * - 卡片内按钮 = 直接操作；语音说卡片名 = 操作
- * - 默认路径：学我的名字（认识与写）
- */
 @Composable
 fun HomeScreen(
     hanzi: HanziDataSource,
@@ -41,8 +37,8 @@ fun HomeScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val tts = remember { LocalTts(context) }
     DisposableEffect(Unit) { onDispose { tts.shutdown() } }
+    val noIndication = remember { MutableInteractionSource() }
 
-    /** 点读：点击卡片朗读其内容（不识字用户靠听）。 */
     val readOut: (String) -> Unit = { text -> tts.speak(text) }
 
     var searchExpanded by remember { mutableStateOf(false) }
@@ -81,10 +77,12 @@ fun HomeScreen(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("识字助手", style = MaterialTheme.typography.titleLarge)
+                val brandHint = "学会认读写自己的名字和常用字"
                 Text(
-                    "学会认读写自己的名字和常用字",
+                    brandHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(brandHint) },
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -140,10 +138,12 @@ fun HomeScreen(
                     ),
                 ) { Text("开始学习", fontSize = 20.sp) }
                 Spacer(Modifier.height(4.dp))
+                val card1Hint = "点这里听：学我的名字"
                 Text(
-                    "点这里听：学我的名字",
+                    card1Hint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(card1Hint) },
                 )
             }
         }
@@ -171,10 +171,12 @@ fun HomeScreen(
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("想学一个字", style = MaterialTheme.typography.titleLarge)
+                        val card2Hint = "说出你想学的字，或让家人帮你输入"
                         Text(
-                            "说出你想学的字，或让家人帮你输入",
+                            card2Hint,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(card2Hint) },
                         )
                     }
                     Spacer(Modifier.weight(1f))
@@ -212,7 +214,13 @@ fun HomeScreen(
                         shape = MaterialTheme.shapes.large,
                     ) { Text("开始学这个字", fontSize = 18.sp) }
                     Spacer(Modifier.height(10.dp))
-                    Text("或直接说：我想学家", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val card2Direct = "或直接说：我想学家"
+                    Text(
+                        card2Direct,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(card2Direct) },
+                    )
                 }
             }
         }
@@ -237,7 +245,13 @@ fun HomeScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("今天有 $reviewQueueSize 个字待复习", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text("先复习巩固，再学新字效果更好", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        val reviewHint = "先复习巩固，再学新字效果更好"
+                        Text(
+                            reviewHint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(reviewHint) },
+                        )
                     }
                     Text("去复习 →", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold)
                 }
@@ -260,7 +274,13 @@ fun HomeScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("还没有建档", style = MaterialTheme.typography.titleMedium)
-                        Text("先录入名字，从学会写自己的名字开始", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val profileHint = "先录入名字，从学会写自己的名字开始"
+                        Text(
+                            profileHint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(profileHint) },
+                        )
                     }
                     Text("去建档 →", fontWeight = FontWeight.Bold)
                 }
@@ -270,11 +290,13 @@ fun HomeScreen(
 
         // ── 首次配置提示（弱）──
         if (!hasApiKey) {
+            val setupHint = "首次使用，请先点右上角设置，让家人帮忙配置语音老师"
             Text(
-                "首次使用，请先点右上角设置，让家人帮忙配置语音老师",
+                setupHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
+                modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(setupHint) },
             )
         }
         // 底部安全区：悬浮吉祥物 + 系统导航条留位
@@ -294,10 +316,12 @@ fun HomeScreen(
                 Column(Modifier.padding(LiteracyDimens.CardPadding)) {
                     Text("语音老师准备", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     Spacer(Modifier.height(6.dp))
+                    val voiceHint = "下载语音包后，女声朗读和语音识别完全离线、更清楚。约 210MB，建议连 Wi-Fi 下载。"
                     Text(
-                        "下载语音包后，女声朗读和语音识别完全离线、更清楚。\n约 210MB，建议连 Wi-Fi 下载。",
+                        voiceHint,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.clickable(interactionSource = noIndication, indication = null) { readOut(voiceHint) },
                     )
                     Spacer(Modifier.height(10.dp))
                     if (dlProgress >= 0 && !dlDone) {

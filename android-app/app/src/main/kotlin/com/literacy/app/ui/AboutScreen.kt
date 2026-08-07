@@ -1,5 +1,6 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,8 @@ private val NoticesText = """
  */
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+
     Column(
         modifier = Modifier
             .fillMaxSize()

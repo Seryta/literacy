@@ -1,5 +1,6 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,8 @@ fun MascotGalleryScreen(
     onSelect: (Mascot) -> Unit,
     onBack: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
+
     Column(
         modifier = Modifier
             .fillMaxSize()

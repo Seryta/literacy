@@ -1,5 +1,6 @@
 package com.literacy.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -43,6 +44,8 @@ fun LearnScreen(
     partialText: String = "",   // 实时字幕（自动语音识别中用户说的话）
     onBack: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
+
     val ui = viewModel.ui
     var input by remember { mutableStateOf("") }
     var strokeCount by remember { mutableStateOf(0) }

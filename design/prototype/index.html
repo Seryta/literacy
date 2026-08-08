@@ -62,7 +62,7 @@
   .agree-card *,.check h4,.check p,.pet-card h4,.pet-card p,
   .item h4,.item p,.pack-card,.trophy,.big-seal,.seal,.breakdown i,
   input,.chip,.phase-cap,.pinyin,.score-ring .pct,.score-ring .lbl,
-  .form input,.speak-bubble,.think-cloud,.step-ind,.screen-label,.label{
+  .form input,.speak-bubble,.think-cloud,.step-ind,.label{
     font-family:'HardKai',-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
     font-synthesis:style weight none !important;
   }
@@ -88,11 +88,9 @@
     radial-gradient(circle at 54px 50%, var(--ink) 0 4px, transparent 5px);opacity:.9}
   .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:124px;height:28px;background:#2b231e;border-radius:0 0 18px 18px;z-index:60}
   .screen{position:absolute;inset:48px 0 0 0;overflow:hidden;display:flex;flex-direction:column;z-index:1}
+  /* 背景水印：绝对定位不占位；默认低透明度做背景装饰 */
+  .watermark{position:absolute;pointer-events:none;opacity:.15}
   .label{position:absolute;top:-42px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:2px;color:#6b5a51;background:#fff;padding:6px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(60,40,20,.12);white-space:nowrap;font-weight:600}
-  .screen-label{
-    position:absolute;top:52px;left:12px;z-index:20;font-size:11px;letter-spacing:1px;color:var(--ink-3);font-weight:600;
-    background:rgba(255,255,255,.7);padding:3px 8px;border-radius:8px;backdrop-filter:blur(4px);
-  }
 
   /* ===== 通用基础组件 ===== */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:60px;border-radius:var(--r-l);padding:0 22px;font-size:17px;font-weight:700;border:0;cursor:pointer;font-family:inherit;letter-spacing:.3px;transition:transform .1s,box-shadow .15s;line-height:1.2}
@@ -102,13 +100,28 @@
   .btn-sm{height:44px;border-radius:var(--r-s);padding:0 14px;font-size:14.5px}
   .btn-block{width:100%}
   .btn-primary{background:var(--primary);color:#fff;box-shadow:var(--shadow-btn)}
+  /* 学习页步骤主题色（保留步骤区分，抽成公共类） */
+  .btn-step-teal{background:#58A79E;box-shadow:0 4px 0 #347B74}
+  .btn-step-teal:active{box-shadow:0 2px 0 #347B74}
+  .btn-step-blue{background:#5B86C6;box-shadow:0 4px 0 #3D649E}
+  .btn-step-blue:active{box-shadow:0 2px 0 #3D649E}
+  .btn-step-red{background:#C76767;box-shadow:0 4px 0 #A54B4B}
+  .btn-step-red:active{box-shadow:0 2px 0 #A54B4B}
+  .btn-step-purple{background:#8C6FC7;box-shadow:0 4px 0 #6F4FA2}
+  .btn-step-purple:active{box-shadow:0 2px 0 #6F4FA2}
+  /* 横排双按钮组（确认/跳过 这类两选一） */
+  .btn-pair{display:flex;gap:12px}
+  .btn-pair .btn{flex:1;min-width:0}
   .btn-primary:active{box-shadow:0 2px 0 #C7782F}
   .btn-ghost{background:var(--primary-soft);color:var(--primary-deep)}
   .btn-outline{background:#fff;border:1.5px solid var(--line-2);color:var(--ink-2)}
   .btn-outline:hover{border-color:var(--primary-soft);color:var(--primary-deep)}
   .btn-danger{background:#F5D9D9;color:#9A3E3E;box-shadow:0 4px 0 #BE7A7A}
-  .card{background:var(--card);border-radius:var(--r-l);box-shadow:var(--shadow-card);padding:20px}
+  .card{background:var(--card);border-radius:var(--r-l);box-shadow:var(--shadow-card);padding:18px}
   .card + .card{margin-top:16px}
+  /* 紧凑卡片档（内容少的部件卡） */
+  .card-sm{background:var(--card);border-radius:var(--r-l);box-shadow:var(--shadow-card);padding:14px 16px}
+  .card + .card,.card-sm + .card-sm{margin-top:16px}
   .row{display:flex;align-items:center;gap:12px}
   .col{display:flex;flex-direction:column;gap:4px}
   .between{display:flex;justify-content:space-between;align-items:center}
@@ -167,6 +180,13 @@
   .char-seal.todo::after{border-color:rgba(180,108,39,.25);opacity:.6}
   .char-seal.current{background:var(--primary-soft);box-shadow:0 0 0 3px rgba(217,138,60,.35)}
 
+  /* 大字输入框（家人代填姓名等） */
+  .input-lg{
+    width:100%;height:60px;border-radius:16px;border:1.5px solid #E8D7B7;background:#FFFBF1;
+    padding:0 16px;font-size:28px;font-family:'KaiTi','楷体_GB2312',serif;color:var(--ink);
+    outline:none;letter-spacing:8px;text-align:center;font-weight:400;
+    box-shadow:inset 0 1px 4px rgba(120,60,10,.06);
+  }
   .avatar{
     width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#F3CF91,#C9863E);
     display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-family:"KaiTi","楷体_GB2312",serif;font-size:22px;
@@ -192,34 +212,46 @@
   /* ===== 悬浮吉祥物（核心语音交互组件 · 用户明确要求） ===== */
   /* 三态：idle（待机省略号三点） / listening（录音态：耳朵动+声波竖条+思考云） / speaking（说话态：嘴动+波纹+语音泡） */
   /* A8：宠物选完（body.pet-selected）后，所有 screen 的 .buttons/.bottom-bar 默认全隐藏（26 屏 18 屏要藏），只有引导阶段 8 屏（guide-screen）恢复显示 —— 这比 JS 写选择器靠谱 100%，永远不会漏网 */
-  body.pet-selected .screen .buttons,
-  body.pet-selected .screen .bottom-bar{display:none !important}
-  body.pet-selected .guide-screen .buttons,
-  body.pet-selected .guide-screen .bottom-bar{display:block !important}
+  body.voice-ready .screen .buttons,
+  body.voice-ready .screen .bottom-bar,
+  body.voice-ready .screen .btn{display:none !important}
+  /* 设置页是家人配置入口，按钮保留 */
+  body.voice-ready #settings .btn{display:inline-flex !important}
+  body.voice-ready #settings .fs-btn{display:inline-flex !important}
+  /* 语音化后「点这里听我读」按钮不再需要（自动朗读） */
+  body.voice-ready .voice-audio-btn{display:none !important}
 
-  /* A5：选宠门闩 — 默认所有 mascot-wrap 不显示，必须选宠页点完 pet-next 给 body 加 pet-selected 后才显示
-     用 !important 强制全局位置 208px 上移 + 右 14px，避免被 screen 内联 style 拉回 18px 挡 chat-flow */
+  /* A5：宠物门闩 — 引导设置阶段（协议/语音包/AI 配置，家人操作）不显示宠物；语音化后（屏 6+）每个页面都显示统一宠物组件 */
   .mascot-wrap{
     position:absolute;right:14px !important;bottom:208px !important;z-index:30;width:80px !important;height:104px !important;pointer-events:auto;
     display:none;
   }
   body.pet-selected .mascot-wrap{display:block !important}
+  body.voice-ready .mascot-wrap{display:block !important}
+  /* 语音化后宠物贴底（对话区左下），统一组件 */
+  body.voice-ready .mascot-wrap:not(.static-mascot){
+    top:auto !important;bottom:10px !important;right:auto !important;left:10px !important;
+    width:64px !important;height:80px !important;
+  }
+  /* 宠物脚下声波不再显示（声波条在宠物旁） */
+  body.voice-ready .mascot-wrap:not(.static-mascot) .voice-visual{display:none !important}
+  body.voice-ready .static-mascot .voice-visual{display:none !important}
   /* 思考云（用户说话时上方浮现） */
   .think-cloud{
-    position:absolute;right:80px;bottom:68px;background:#fff;border:1.5px solid var(--line-2);
-    border-radius:18px;padding:8px 12px 10px;font-size:14px;line-height:1.45;color:var(--ink);
-    box-shadow:var(--shadow-card);min-width:120px;max-width:190px;white-space:normal;
+    position:absolute;left:80px;right:auto;bottom:26px;background:#fff;border:1.5px solid var(--line-2);
+    border-radius:18px 18px 18px 4px;padding:8px 12px 10px;font-size:14px;line-height:1.45;color:var(--ink);
+    box-shadow:var(--shadow-card);min-width:120px;max-width:240px;width:max-content;white-space:normal;
   }
   .think-cloud::after{
-    content:"";position:absolute;right:-8px;bottom:18px;width:14px;height:14px;
-    background:#fff;border-right:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);transform:rotate(-45deg);
+    content:"";position:absolute;left:-8px;bottom:18px;width:14px;height:14px;
+    background:#fff;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);transform:rotate(45deg);
   }
   .think-cloud.lines-2{min-height:54px}
   /* 语音泡（宠物说话时上方显示） */
   .speak-bubble{
-    position:absolute;right:80px;bottom:60px;background:var(--primary-soft-2);
-    border-radius:18px 18px 4px 18px;padding:12px 14px;font-size:15px;line-height:1.55;color:var(--ink);
-    box-shadow:var(--shadow-card);min-width:140px;max-width:220px;
+    position:absolute;left:80px;right:auto;bottom:26px;background:var(--primary-soft-2);
+    border-radius:18px 18px 18px 4px;padding:10px 12px;font-size:14px;line-height:1.5;color:var(--ink);
+    box-shadow:var(--shadow-card);min-width:120px;max-width:240px;width:max-content;
     border:1.5px solid #F0DFB9;
   }
   /* 声音可视化条（宠物下方） */
@@ -236,8 +268,8 @@
     50%{transform:translateY(-6px)}
   }
   /* listening：耳朵动 + 竖条高度按音量变化（录音机式） */
-  .mascot-wrap.listening .ear.left{animation:ear-wiggle-l 1.4s ease-in-out infinite;transform-origin:50% 100%}
-  .mascot-wrap.listening .ear.right{animation:ear-wiggle-r 1.4s ease-in-out infinite 0.2s;transform-origin:50% 100%}
+  .mascot-wrap.listening .ear.left{animation:ear-wiggle-l 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  .mascot-wrap.listening .ear.right{animation:ear-wiggle-r 1.4s ease-in-out infinite 0.2s;transform-box:fill-box;transform-origin:50% 100%}
   @keyframes ear-wiggle-l{
     0%,100%{transform:rotate(0deg)}
     30%{transform:rotate(12deg) translateY(-2px)}
@@ -262,13 +294,43 @@
   @keyframes wave-b{0%,100%{height:12px}50%{height:4px}}
   @keyframes wave-c{0%,100%{height:8px}50%{height:16px}}
 
-  /* speaking：机器人整张嘴做开合动画（高度 + 顶部微调），模仿章鱼统一风格 */
+  /* speaking：所有宠物嘴部开合动画（SVG 用 scaleY） */
   .mascot-wrap.speaking .mouth{animation:none}
-  .mascot-wrap.speaking .mascot-robot .mouth{animation:mouth-talk-jaw .8s ease-in-out infinite;transform-origin:50% 0%}
+  .mascot-wrap.speaking .mascot .mouth{animation:mouth-talk-jaw .8s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
   @keyframes mouth-talk-jaw{
-    0%,100%{height:8px;border-radius:0 0 22px 22px}
-    50%{height:14px;border-radius:0 0 28px 28px}
+    0%,100%{transform:scaleY(1)}
+    50%{transform:scaleY(1.55)}
   }
+  /* ═══ 三态动作系统：每只宠物 idle/listening/speaking 专属动作（SVG 元素动画） ═══ */
+  .mascot-wrap.idle .mascot{animation:pet-float 3.2s ease-in-out infinite}
+  @keyframes pet-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  .mascot-wrap.idle .mascot-robot .ant-ball{animation:ant-glow 2.2s ease-in-out infinite;transform-box:fill-box}
+  @keyframes ant-glow{0%,100%{transform:scale(1)}50%{transform:scale(1.16)}}
+  .mascot-wrap.idle .mascot-octopus .t1,.mascot-wrap.idle .mascot-octopus .t4{animation:tent-sway 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 0%}
+  .mascot-wrap.idle .mascot-octopus .t2,.mascot-wrap.idle .mascot-octopus .t5{animation:tent-sway 2.4s ease-in-out .3s infinite;transform-box:fill-box;transform-origin:50% 0%}
+  .mascot-wrap.idle .mascot-octopus .t3,.mascot-wrap.idle .mascot-octopus .t6{animation:tent-sway 2.4s ease-in-out .6s infinite;transform-box:fill-box;transform-origin:50% 0%}
+  @keyframes tent-sway{0%,100%{transform:rotate(0deg)}50%{transform:rotate(3.5deg)}}
+  .mascot-wrap.idle .mascot-dino .s1{animation:spine-pulse 2.1s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  .mascot-wrap.idle .mascot-dino .s2{animation:spine-pulse 2.1s ease-in-out .35s infinite;transform-box:fill-box;transform-origin:50% 100%}
+  .mascot-wrap.idle .mascot-dino .s3{animation:spine-pulse 2.1s ease-in-out .7s infinite;transform-box:fill-box;transform-origin:50% 100%}
+  @keyframes spine-pulse{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.2)}}
+  .mascot-wrap.idle .mascot-mochi .leaf.l{animation:leaf-sway 2.2s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  .mascot-wrap.idle .mascot-mochi .leaf.r{animation:leaf-sway 2.2s ease-in-out .4s infinite;transform-box:fill-box;transform-origin:50% 100%}
+  @keyframes leaf-sway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(5deg)}}
+  .mascot-wrap.listening .mascot-robot .pupil{animation:pupil-scan 1.2s ease-in-out infinite;transform-box:fill-box}
+  @keyframes pupil-scan{0%,100%{transform:scaleX(1)}50%{transform:scaleX(1.35)}}
+  .mascot-wrap.listening .mascot-octopus .eye,.mascot-wrap.listening .mascot-dino .eye{animation:eye-grow 1.3s ease-in-out infinite;transform-box:fill-box}
+  @keyframes eye-grow{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+  .mascot-wrap.listening .mascot-mochi .eye{animation:eye-squint 1.3s ease-in-out infinite;transform-box:fill-box}
+  @keyframes eye-squint{0%,100%{transform:scale(1,1)}50%{transform:scale(1,1.35)}}
+  .mascot-wrap.speaking .mascot-robot .ant-ball{animation:ant-wag .8s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  @keyframes ant-wag{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+  .mascot-wrap.speaking .mascot-octopus .t2,.mascot-wrap.speaking .mascot-octopus .t5{animation:tent-wave .8s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 0%}
+  @keyframes tent-wave{0%,100%{transform:rotate(0deg)}50%{transform:rotate(5deg)}}
+  .mascot-wrap.speaking .mascot-dino .arm.l{animation:arm-wave .9s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  @keyframes arm-wave{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-8deg)}}
+  .mascot-wrap.speaking .mascot-mochi .leaf.l{animation:leaf-hop .7s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  @keyframes leaf-hop{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-8deg)}}
   .mascot-wrap.speaking .voice-visual{flex-direction:row;align-items:center;gap:4px;bottom:-10px;width:70px}
   .mascot-wrap.speaking .voice-visual::before{
     content:"";position:absolute;width:42px;height:42px;border-radius:50%;
@@ -296,231 +358,8 @@
 
   /* ===== 吉祥物 4 套独立造型（章鱼/机器人/恐龙/团子 · 立体化，不是换色） ===== */
   /* 通用：.mascot 容器 72×72，内部各造型结构完全独立，自带 3D 高光阴影 */
-  .mascot{position:relative;width:72px;height:72px;margin:0 auto}
-  .mascot .face{position:absolute;inset:0;z-index:3}
-  .mascot .eye{position:absolute;background:#26201a;border-radius:50%;box-shadow:inset 1px 2px 0 rgba(255,255,255,.45)}
-  .mascot .eye::after{content:"";position:absolute;border-radius:50%;background:#fff}
-  .mascot .blush{position:absolute;border-radius:50%;opacity:.55}
-  .mascot .mouth{position:absolute;left:50%;transform:translateX(-50%)}
-
-  /* ──────────── 1/4 小章 · 章鱼（橙粉系 · 8 触手 + 圆头大眼） ──────────── */
-  .mascot.mascot-octopus .body{
-    position:absolute;top:8px;left:50%;transform:translateX(-50%);
-    width:58px;height:54px;border-radius:60% 60% 50% 50% / 65% 65% 55% 55%;
-    background:radial-gradient(circle at 30% 24%,#FFD8D0 0%,#F7A999 55%,#E07D6E 100%);
-    box-shadow:inset -8px -14px 26px rgba(150,50,40,.35),0 10px 18px rgba(120,50,40,.22);
-    z-index:1;
-  }
-  .mascot.mascot-octopus .tentacle{
-    position:absolute;bottom:-2px;width:14px;height:22px;z-index:0;
-    background:linear-gradient(180deg,#F5A393,#CC6F61);
-    border-radius:50% 50% 45% 45% / 60% 60% 50% 50%;
-    box-shadow:inset -2px -4px 6px rgba(140,45,35,.3);
-  }
-  .mascot.mascot-octopus .tentacle.tl{left:2px;transform:rotate(-28deg)}
-  .mascot.mascot-octopus .tentacle.tr{right:2px;transform:rotate(28deg)}
-  .mascot.mascot-octopus .tentacle.l{left:-2px;bottom:6px;transform:rotate(-42deg);height:18px}
-  .mascot.mascot-octopus .tentacle.r{right:-2px;bottom:6px;transform:rotate(42deg);height:18px}
-  .mascot.mascot-octopus .tentacle.bl{left:12px;bottom:-6px;transform:rotate(-12deg);height:20px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .mascot.mascot-octopus .tentacle.br{right:12px;bottom:-6px;transform:rotate(12deg);height:20px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .mascot.mascot-octopus .eye{top:24px;width:10px;height:12px}
-  .mascot.mascot-octopus .eye.l{left:18px}.mascot.mascot-octopus .eye.r{right:18px}
-  .mascot.mascot-octopus .eye::after{top:2px;left:2.5px;width:3.5px;height:3.5px}
-  .mascot.mascot-octopus .blush{top:42px;width:13px;height:7px;background:#F27965}
-  .mascot.mascot-octopus .blush.l{left:6px}.mascot.mascot-octopus .blush.r{right:6px}
-  .mascot.mascot-octopus .mouth{
-    top:44px;width:24px;height:12px;
-    border:2.5px solid #26201a;border-top:0;border-radius:0 0 26px 26px;
-    background:rgba(255,220,210,.6);
-  }
-  .mascot.mascot-teach{ /* 小章带老师帽子（配置AI屏用） */
-    position:relative;width:72px;height:72px;margin:0 auto;
-  }
-  .mascot.mascot-teach .teacher-hat{
-    position:absolute;top:-8px;left:50%;transform:translateX(-50%);z-index:4;
-    width:48px;height:22px;
-    background:linear-gradient(180deg,#3E649E,#2C4A7A);
-    clip-path:polygon(0 50%,12% 0,88% 0,100% 50%,92% 55%,80% 55%,80% 100%,20% 100%,20% 55%,8% 55%);
-    box-shadow:inset 0 -2px 4px rgba(0,0,0,.3);
-  }
-  .mascot.mascot-teach .teacher-hat::after{
-    content:"";position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
-    width:16px;height:16px;background:#F7C95F;border-radius:2px;
-    box-shadow:inset -2px -2px 3px rgba(150,100,20,.35);
-  }
-  .mascot.mascot-teach .body{
-    position:absolute;top:10px;left:50%;transform:translateX(-50%);
-    width:56px;height:52px;border-radius:60% 60% 50% 50% / 65% 65% 55% 55%;
-    background:radial-gradient(circle at 30% 24%,#FFD8D0 0%,#F7A999 55%,#E07D6E 100%);
-    box-shadow:inset -8px -14px 26px rgba(150,50,40,.35),0 10px 18px rgba(120,50,40,.22);
-    z-index:1;
-  }
-  .mascot.mascot-teach .tentacle{
-    position:absolute;bottom:-2px;width:13px;height:20px;z-index:0;
-    background:linear-gradient(180deg,#F5A393,#CC6F61);
-    border-radius:50% 50% 45% 45% / 60% 60% 50% 50%;
-    box-shadow:inset -2px -4px 6px rgba(140,45,35,.3);
-  }
-  .mascot.mascot-teach .tentacle.tl{left:4px;transform:rotate(-28deg)}
-  .mascot.mascot-teach .tentacle.tr{right:4px;transform:rotate(28deg)}
-  .mascot.mascot-teach .tentacle.l{left:0;bottom:6px;transform:rotate(-42deg);height:16px}
-  .mascot.mascot-teach .tentacle.r{right:0;bottom:6px;transform:rotate(42deg);height:16px}
-  .mascot.mascot-teach .tentacle.bl{left:13px;bottom:-5px;transform:rotate(-10deg);height:18px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .mascot.mascot-teach .tentacle.br{right:13px;bottom:-5px;transform:rotate(10deg);height:18px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .mascot.mascot-teach .eye{position:absolute;top:26px;width:10px;height:12px;background:#26201a;border-radius:50%;box-shadow:inset 1px 2px 0 rgba(255,255,255,.45);z-index:5}
-  .mascot.mascot-teach .eye.l{left:18px}.mascot.mascot-teach .eye.r{right:18px}
-  .mascot.mascot-teach .eye::after{content:"";position:absolute;top:2px;left:2.5px;width:3.5px;height:3.5px;background:#fff;border-radius:50%}
-  .mascot.mascot-teach .blush{position:absolute;top:44px;width:13px;height:7px;border-radius:50%;opacity:.55;background:#F27965;z-index:5}
-  .mascot.mascot-teach .blush.l{left:6px}.mascot.mascot-teach .blush.r{right:6px}
-  .mascot.mascot-teach .mouth-smile{
-    position:absolute;top:46px;left:50%;transform:translateX(-50%);z-index:5;
-    width:22px;height:10px;
-    border:2.5px solid #26201a;border-top:0;border-left:0;border-right:0;border-radius:0 0 22px 22px;
-    background:transparent;
-  }
-
-  /* ──────────── 2/4 小机 · 机器人（蓝灰系 · 方头 + 天线 + 方形屏眼） ──────────── */
-  .mascot.mascot-robot .body{
-    position:absolute;top:12px;left:50%;transform:translateX(-50%);
-    width:54px;height:50px;border-radius:16px 16px 20px 20px;
-    background:linear-gradient(135deg,#D6E3F2 0%,#9FBDD8 55%,#6C91B5 100%);
-    box-shadow:inset -6px -8px 18px rgba(40,70,110,.35),0 10px 18px rgba(50,80,130,.22);
-    z-index:1;
-  }
-  .mascot.mascot-robot .antenna{
-    position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:2;
-    width:2px;height:12px;background:#6C91B5;
-  }
-  .mascot.mascot-robot .antenna::after{
-    content:"";position:absolute;top:-5px;left:50%;transform:translateX(-50%);
-    width:10px;height:10px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#FFDD70,#E8A630);
-    box-shadow:0 0 8px rgba(255,180,60,.7);
-  }
-  .mascot.mascot-robot .ear{
-    position:absolute;top:26px;width:10px;height:22px;z-index:0;
-    background:linear-gradient(180deg,#89A8C6,#547797);
-    border-radius:6px;
-    box-shadow:inset -2px -3px 5px rgba(40,70,110,.4);
-  }
-  .mascot.mascot-robot .ear.left{left:2px}.mascot.mascot-robot .ear.right{right:2px}
-  .mascot.mascot-robot .eye{
-    top:24px;width:12px;height:12px;border-radius:4px;
-    background:#1E3552;box-shadow:inset 1px 2px 0 rgba(255,255,255,.25),0 0 0 2px #B4CCE2 inset;
-  }
-  .mascot.mascot-robot .eye::after{top:2px;left:3px;width:3px;height:3px;background:#8AD2FF;box-shadow:0 0 6px #8AD2FF;border-radius:1px}
-  .mascot.mascot-robot .eye.l{left:14px}.mascot.mascot-robot .eye.r{right:14px}
-  .mascot.mascot-robot .blush{top:42px;width:10px;height:6px;background:#F09A99;border-radius:3px}
-  .mascot.mascot-robot .blush.l{left:8px}.mascot.mascot-robot .blush.r{right:8px}
-  .mascot.mascot-robot .mouth{
-    top:44px;width:24px;height:12px;
-    border:2.5px solid #26201a;border-top:0;border-radius:0 0 26px 26px;
-    background:rgba(210,235,255,.6);
-    position:absolute;left:50%;transform:translateX(-50%);
-    overflow:hidden;
-  }
-  .mascot.mascot-robot .mouth::before{
-    content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:7px;height:4px;border-radius:0 0 3px 3px;background:#fff;box-shadow:inset 0 -1px 1px rgba(0,0,0,.08);
-  }
-  .mascot.mascot-robot .mouth::after{
-    content:"";position:absolute;bottom:1.5px;left:50%;transform:translateX(-50%);width:6px;height:4px;border-radius:50% 50% 2px 2px;background:#FF7A8A;opacity:.85;
-  }
-
-  /* ──────────── 3/4 小恐 · 恐龙（绿系 · 背脊刺 + 短手脚 + 一颗牙） ──────────── */
-  .mascot.mascot-dino .body{
-    position:absolute;top:14px;left:50%;transform:translateX(-50%);
-    width:56px;height:48px;border-radius:50% 50% 46% 54% / 60% 60% 42% 42%;
-    background:radial-gradient(circle at 32% 28%,#CFEAD4,#7FB98E 58%,#488F5B 100%);
-    box-shadow:inset -8px -12px 24px rgba(40,100,60,.4),0 10px 18px rgba(40,100,60,.22);
-    z-index:1;
-  }
-  .mascot.mascot-dino .spine{
-    position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:2;
-    width:2px;height:8px;background:transparent;
-  }
-  .mascot.mascot-dino .spine::before,.mascot.mascot-dino .spine::after{
-    content:"";position:absolute;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
-    border-bottom:10px solid #3F8852;filter:drop-shadow(0 1px 0 rgba(0,0,0,.15));
-  }
-  .mascot.mascot-dino .spine::before{left:-12px;transform:rotate(-18deg)}
-  .mascot.mascot-dino .spine::after{left:2px;transform:rotate(18deg)}
-  .mascot.mascot-dino .spine-mid{
-    position:absolute;top:4px;left:50%;transform:translateX(-50%);z-index:2;
-    width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
-    border-bottom:12px solid #3F8852;filter:drop-shadow(0 1px 0 rgba(0,0,0,.15));
-  }
-  .mascot.mascot-dino .arm{
-    position:absolute;top:38px;width:10px;height:14px;z-index:0;
-    background:linear-gradient(180deg,#7FB98E,#3F8852);
-    border-radius:6px 6px 10px 10px;
-    box-shadow:inset -2px -3px 5px rgba(40,100,60,.4);
-  }
-  .mascot.mascot-dino .arm.left{left:2px;transform:rotate(18deg)}
-  .mascot.mascot-dino .arm.right{right:2px;transform:rotate(-18deg)}
-  .mascot.mascot-dino .foot{
-    position:absolute;bottom:-2px;width:14px;height:10px;z-index:0;
-    background:linear-gradient(180deg,#7FB98E,#387A4B);
-    border-radius:10px 10px 6px 6px;
-    box-shadow:inset -2px -2px 5px rgba(40,100,60,.4);
-  }
-  .mascot.mascot-dino .foot.left{left:12px}.mascot.mascot-dino .foot.right{right:12px}
-  .mascot.mascot-dino .eye{top:26px;width:10px;height:12px}
-  .mascot.mascot-dino .eye.l{left:16px}.mascot.mascot-dino .eye.r{right:16px}
-  .mascot.mascot-dino .eye::after{top:2px;left:2.5px;width:3.5px;height:3.5px}
-  .mascot.mascot-dino .blush{top:44px;width:12px;height:7px;background:#F5A698;opacity:.6}
-  .mascot.mascot-dino .blush.l{left:8px}.mascot.mascot-dino .blush.r{right:8px}
-  .mascot.mascot-dino .mouth{
-    top:46px;width:28px;height:14px;border-radius:0 0 14px 14px;
-    background:#26201a;border:0;overflow:hidden;
-  }
-  .mascot.mascot-dino .mouth::before{
-    content:"";position:absolute;left:6px;top:-2px;width:5px;height:6px;background:#FFF7DC;
-    border-radius:0 0 3px 3px;
-  }
-  .mascot.mascot-dino .mouth::after{
-    content:"";position:absolute;inset:3px 4px 2px;border-radius:0 0 10px 10px;
-    background:radial-gradient(ellipse at 50% 0,#F08D8D 0%,#C25A5A 70%);
-  }
-
-  /* ──────────── 4/4 小团 · 团子（紫粉系 · 软球 + 呆毛 + 小圆脚） ──────────── */
-  .mascot.mascot-mochi .body{
-    position:absolute;top:10px;left:50%;transform:translateX(-50%);
-    width:58px;height:56px;border-radius:52% 48% 50% 50% / 50% 50% 52% 48%;
-    background:radial-gradient(circle at 32% 28%,#EBDFF6 0%,#C7AFE8 58%,#9579C7 100%);
-    box-shadow:inset -8px -14px 28px rgba(90,50,140,.35),0 10px 18px rgba(90,50,140,.2);
-    z-index:1;
-  }
-  .mascot.mascot-mochi .ahoge{
-    position:absolute;top:0;left:50%;transform:translateX(-50%) rotate(-8deg);z-index:2;
-    width:26px;height:18px;
-  }
-  .mascot.mascot-mochi .ahoge::before,.mascot.mascot-mochi .ahoge::after{
-    content:"";position:absolute;width:14px;height:16px;
-    background:radial-gradient(ellipse at 30% 30%,#B7E2BE,#5FAF73 75%);
-    border-radius:60% 40% 60% 40% / 70% 50% 60% 40%;
-    box-shadow:inset -2px -3px 6px rgba(40,100,60,.3);
-  }
-  .mascot.mascot-mochi .ahoge::before{left:-2px;transform:rotate(-34deg)}
-  .mascot.mascot-mochi .ahoge::after{left:8px;transform:rotate(34deg)}
-  .mascot.mascot-mochi .foot{
-    position:absolute;bottom:0;width:14px;height:8px;z-index:0;
-    background:linear-gradient(180deg,#B59EDB,#7D5FB0);
-    border-radius:50%;box-shadow:inset -2px -2px 5px rgba(90,50,140,.4);
-  }
-  .mascot.mascot-mochi .foot.left{left:12px}.mascot.mascot-mochi .foot.right{right:12px}
-  .mascot.mascot-mochi .eye{top:26px;width:10px;height:11px;background:transparent;border:0}
-  .mascot.mascot-mochi .eye::before{
-    content:"";position:absolute;width:100%;height:3.5px;background:#26201a;border-radius:50%;top:3.5px;left:0;
-    box-shadow:0 5px 0 -0.5px #26201a;
-  }
-  .mascot.mascot-mochi .eye.l{left:17px}.mascot.mascot-mochi .eye.r{right:17px}
-  .mascot.mascot-mochi .blush{top:42px;width:14px;height:8px;background:#F5A9C6;opacity:.75}
-  .mascot.mascot-mochi .blush.l{left:6px}.mascot.mascot-mochi .blush.r{right:6px}
-  .mascot.mascot-mochi .mouth{
-    top:46px;width:20px;height:10px;
-    border:2.5px solid #26201a;border-top:0;border-radius:0 0 22px 22px;
-    background:rgba(255,200,220,.55);
-  }
+  .mascot{display:block;position:relative;width:72px;height:72px;margin:0 auto}
+  /* 吉祥物造型已迁移到 SVG symbol */
 
   /* 选项卡（选宠物、设置选项）：4 张卡片，每张独立的 mini 版造型 */
   .pet-card{
@@ -528,7 +367,7 @@
     border:2.5px solid var(--line);box-shadow:var(--shadow-card);cursor:pointer;overflow:visible;
   }
   .pet-card.on{border-color:var(--primary);background:var(--primary-soft-2);box-shadow:0 0 0 4px rgba(217,138,60,.2),var(--shadow-card-2)}
-  .pet-card .mini{width:60px;height:60px;flex:0 0 60px;position:relative;overflow:visible;isolation:isolate}
+  .pet-card .mini{display:block;width:60px;height:60px;flex:0 0 60px;position:relative;overflow:visible;isolation:isolate}
   .pet-card .mini .face{position:absolute;inset:0;z-index:4}
   .pet-card .mini .eye{position:absolute;background:#26201a;border-radius:50%;box-shadow:inset 1px 1.5px 0 rgba(255,255,255,.45);z-index:4}
   .pet-card .mini .eye::after{content:"";position:absolute;border-radius:50%;background:#fff}
@@ -537,185 +376,45 @@
   .pet-card h4{margin:0 0 2px;font-size:17px;font-weight:800;color:var(--ink)}
   .pet-card p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.45}
 
-  /* mini 小章 */
-  .pet-card .mini.mascot-octopus .body{
-    position:absolute;top:8px;left:50%;transform:translateX(-50%);
-    width:46px;height:42px;border-radius:60% 60% 50% 50% / 65% 65% 55% 55%;
-    background:radial-gradient(circle at 30% 24%,#FFD8D0 0%,#F7A999 55%,#E07D6E 100%);
-    box-shadow:inset -5px -10px 18px rgba(150,50,40,.35),0 6px 12px rgba(120,50,40,.2);
-    z-index:1;
+  .mic-hint{
+    align-self:center;margin:2px 0 4px;padding:6px 12px;border-radius:999px;
+    background:rgba(88,150,102,.1);color:#387448;font-size:12px;font-weight:700;letter-spacing:1px;
+    display:inline-flex;align-items:center;gap:7px
   }
-  .pet-card .mini.mascot-octopus .tentacle{
-    position:absolute;bottom:-1px;width:10px;height:16px;z-index:0;
-    background:linear-gradient(180deg,#F5A393,#CC6F61);
-    border-radius:50% 50% 45% 45% / 60% 60% 50% 50%;
-    box-shadow:inset -1px -3px 4px rgba(140,45,35,.3);
+  .mic-hint .mic-dot{
+    width:7px;height:7px;border-radius:50%;background:var(--success);flex:0 0 7px;
+    animation:mic-pulse 1.4s ease-in-out infinite
   }
-  .pet-card .mini.mascot-octopus .tentacle.tl{left:3px;transform:rotate(-28deg)}
-  .pet-card .mini.mascot-octopus .tentacle.tr{right:3px;transform:rotate(28deg)}
-  .pet-card .mini.mascot-octopus .tentacle.l{left:-1px;bottom:4px;transform:rotate(-42deg);height:13px}
-  .pet-card .mini.mascot-octopus .tentacle.r{right:-1px;bottom:4px;transform:rotate(42deg);height:13px}
-  .pet-card .mini.mascot-octopus .tentacle.bl{left:10px;bottom:-4px;transform:rotate(-10deg);height:14px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .pet-card .mini.mascot-octopus .tentacle.br{right:10px;bottom:-4px;transform:rotate(10deg);height:14px;border-radius:50% 50% 60% 60% / 60% 60% 70% 70%}
-  .pet-card .mini.mascot-octopus .eye{top:20px;width:8px;height:9px}
-  .pet-card .mini.mascot-octopus .eye.l{left:14px}.pet-card .mini.mascot-octopus .eye.r{right:14px}
-  .pet-card .mini.mascot-octopus .eye::after{top:1.5px;left:2px;width:2.5px;height:2.5px}
-  .pet-card .mini.mascot-octopus .blush{top:34px;width:10px;height:5px;background:#F27965}
-  .pet-card .mini.mascot-octopus .blush.l{left:5px}.pet-card .mini.mascot-octopus .blush.r{right:5px}
-  .pet-card .mini.mascot-octopus .mouth{
-    top:36px;width:18px;height:9px;
-    border:2px solid #26201a;border-top:0;border-radius:0 0 20px 20px;
-    background:rgba(255,220,210,.6);
-  }
+  @keyframes mic-pulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+  /* 点读高亮：说明文字被点击朗读时的视觉反馈 */
+  .reading{background:var(--warn-soft) !important;border-radius:6px;animation:read-pulse .8s ease-in-out 2}
+  @keyframes read-pulse{0%,100%{background:var(--warn-soft)}50%{background:#FFE9B8}}
 
-  /* mini 小机 */
-  .pet-card .mini.mascot-robot .body{
-    position:absolute;top:10px;left:50%;transform:translateX(-50%);
-    width:44px;height:40px;border-radius:13px 13px 16px 16px;
-    background:linear-gradient(135deg,#D6E3F2 0%,#9FBDD8 55%,#6C91B5 100%);
-    box-shadow:inset -4px -6px 14px rgba(40,70,110,.35),0 6px 12px rgba(50,80,130,.2);
-    z-index:1;
+  /* A8：Chat Flow 对话面板 — 静态气泡已整合进宠物说话框，不再展示；DOM 保留供语音脚本提取 */
+  .chat-flow{display:none !important}
+  /* 声波条：宠物旁（正在监听的反馈），voice-ready 显示 */
+  .flow-vv{
+    position:absolute;bottom:16px;left:74px;z-index:3;
+    display:flex;align-items:flex-end;gap:2.5px;width:60px;height:12px;
   }
-  .pet-card .mini.mascot-robot .antenna{
-    position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:2;
-    width:1.5px;height:10px;background:#6C91B5;
-  }
-  .pet-card .mini.mascot-robot .antenna::after{
-    content:"";position:absolute;top:-4px;left:50%;transform:translateX(-50%);
-    width:8px;height:8px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#FFDD70,#E8A630);
-    box-shadow:0 0 6px rgba(255,180,60,.7);
-  }
-  .pet-card .mini.mascot-robot .ear{
-    position:absolute;top:22px;width:8px;height:18px;z-index:0;
-    background:linear-gradient(180deg,#89A8C6,#547797);border-radius:5px;
-    box-shadow:inset -1px -2px 4px rgba(40,70,110,.4);
-  }
-  .pet-card .mini.mascot-robot .ear.left{left:2px}.pet-card .mini.mascot-robot .ear.right{right:2px}
-  .pet-card .mini.mascot-robot .eye{
-    top:20px;width:9px;height:9px;border-radius:3px;
-    background:#1E3552;box-shadow:inset 1px 1.5px 0 rgba(255,255,255,.25),0 0 0 1.5px #B4CCE2 inset;
-  }
-  .pet-card .mini.mascot-robot .eye::after{top:1.5px;left:2px;width:2.5px;height:2.5px;background:#8AD2FF;box-shadow:0 0 5px #8AD2FF;border-radius:1px}
-  .pet-card .mini.mascot-robot .eye.l{left:11px}.pet-card .mini.mascot-robot .eye.r{right:11px}
-  .pet-card .mini.mascot-robot .blush{top:35px;width:8px;height:5px;background:#F09A99;border-radius:2px}
-  .pet-card .mini.mascot-robot .blush.l{left:6px}.pet-card .mini.mascot-robot .blush.r{right:6px}
-  .pet-card .mini.mascot-robot .mouth{
-    top:36px;width:18px;height:9px;
-    border:2px solid #26201a;border-top:0;border-radius:0 0 20px 20px;
-    background:rgba(210,235,255,.6);
-    position:absolute;left:50%;transform:translateX(-50%);
-    overflow:hidden;
-  }
-  .pet-card .mini.mascot-robot .mouth::before{
-    content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:5.5px;height:3px;border-radius:0 0 2.5px 2.5px;background:#fff;box-shadow:inset 0 -0.8px 0.8px rgba(0,0,0,.08);
-  }
-  .pet-card .mini.mascot-robot .mouth::after{
-    content:"";position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:4.5px;height:3px;border-radius:50% 50% 1.5px 1.5px;background:#FF7A8A;opacity:.85;
-  }
+  .flow-vv i{width:2.5px;border-radius:2px;background:var(--primary);opacity:.9}
+  .flow-vv i:nth-child(1){height:5px;animation:vv-wave .8s ease-in-out infinite 0s}
+  .flow-vv i:nth-child(2){height:9px;animation:vv-wave .8s ease-in-out infinite .08s}
+  .flow-vv i:nth-child(3){height:13px;animation:vv-wave .8s ease-in-out infinite .16s}
+  .flow-vv i:nth-child(4){height:16px;animation:vv-wave .8s ease-in-out infinite .24s}
+  .flow-vv i:nth-child(5){height:12px;animation:vv-wave .8s ease-in-out infinite .32s}
+  .flow-vv i:nth-child(6){height:8px;animation:vv-wave .8s ease-in-out infinite .4s}
+  .flow-vv i:nth-child(7){height:5px;animation:vv-wave .8s ease-in-out infinite .48s}
+  @keyframes vv-wave{0%,100%{height:4px}50%{height:15px}}
 
-  /* mini 小恐 */
-  .pet-card .mini.mascot-dino .body{
-    position:absolute;top:12px;left:50%;transform:translateX(-50%);
-    width:46px;height:38px;border-radius:50% 50% 46% 54% / 60% 60% 42% 42%;
-    background:radial-gradient(circle at 32% 28%,#CFEAD4,#7FB98E 58%,#488F5B 100%);
-    box-shadow:inset -5px -10px 18px rgba(40,100,60,.4),0 6px 12px rgba(40,100,60,.2);
-    z-index:1;
-  }
-  .pet-card .mini.mascot-dino .spine{
-    position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:2;width:2px;height:6px;background:transparent;
-  }
-  .pet-card .mini.mascot-dino .spine::before,.pet-card .mini.mascot-dino .spine::after{
-    content:"";position:absolute;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
-    border-bottom:8px solid #3F8852;filter:drop-shadow(0 1px 0 rgba(0,0,0,.12));
-  }
-  .pet-card .mini.mascot-dino .spine::before{left:-10px;transform:rotate(-18deg)}
-  .pet-card .mini.mascot-dino .spine::after{left:2px;transform:rotate(18deg)}
-  .pet-card .mini.mascot-dino .spine-mid{
-    position:absolute;top:3px;left:50%;transform:translateX(-50%);z-index:2;
-    width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
-    border-bottom:10px solid #3F8852;filter:drop-shadow(0 1px 0 rgba(0,0,0,.12));
-  }
-  .pet-card .mini.mascot-dino .arm{
-    position:absolute;top:30px;width:8px;height:11px;z-index:0;
-    background:linear-gradient(180deg,#7FB98E,#3F8852);
-    border-radius:5px 5px 8px 8px;box-shadow:inset -1px -2px 4px rgba(40,100,60,.4);
-  }
-  .pet-card .mini.mascot-dino .arm.left{left:2px;transform:rotate(18deg)}
-  .pet-card .mini.mascot-dino .arm.right{right:2px;transform:rotate(-18deg)}
-  .pet-card .mini.mascot-dino .foot{
-    position:absolute;bottom:-1px;width:11px;height:8px;z-index:0;
-    background:linear-gradient(180deg,#7FB98E,#387A4B);
-    border-radius:8px 8px 5px 5px;box-shadow:inset -1px -2px 4px rgba(40,100,60,.4);
-  }
-  .pet-card .mini.mascot-dino .foot.left{left:10px}.pet-card .mini.mascot-dino .foot.right{right:10px}
-  .pet-card .mini.mascot-dino .eye{top:22px;width:8px;height:9px}
-  .pet-card .mini.mascot-dino .eye.l{left:12px}.pet-card .mini.mascot-dino .eye.r{right:12px}
-  .pet-card .mini.mascot-dino .eye::after{top:1.5px;left:2px;width:2.5px;height:2.5px}
-  .pet-card .mini.mascot-dino .blush{top:36px;width:10px;height:5px;background:#F5A698;opacity:.6}
-  .pet-card .mini.mascot-dino .blush.l{left:6px}.pet-card .mini.mascot-dino .blush.r{right:6px}
-  .pet-card .mini.mascot-dino .mouth{
-    top:38px;width:22px;height:10px;border-radius:0 0 10px 10px;
-    background:#26201a;border:0;overflow:hidden;
-  }
-  .pet-card .mini.mascot-dino .mouth::before{
-    content:"";position:absolute;left:5px;top:-1.5px;width:4px;height:4.5px;background:#FFF7DC;border-radius:0 0 2px 2px;
-  }
-  .pet-card .mini.mascot-dino .mouth::after{
-    content:"";position:absolute;inset:2px 3px 2px;border-radius:0 0 8px 8px;
-    background:radial-gradient(ellipse at 50% 0,#F08D8D 0%,#C25A5A 70%);
-  }
-
-  /* mini 小团 */
-  .pet-card .mini.mascot-mochi .body{
-    position:absolute;top:9px;left:50%;transform:translateX(-50%);
-    width:46px;height:44px;border-radius:52% 48% 50% 50% / 50% 50% 52% 48%;
-    background:radial-gradient(circle at 32% 28%,#EBDFF6 0%,#C7AFE8 58%,#9579C7 100%);
-    box-shadow:inset -6px -11px 20px rgba(90,50,140,.35),0 6px 12px rgba(90,50,140,.2);
-    z-index:1;
-  }
-  .pet-card .mini.mascot-mochi .ahoge{
-    position:absolute;top:0;left:50%;transform:translateX(-50%) rotate(-8deg);z-index:2;width:22px;height:15px;
-  }
-  .pet-card .mini.mascot-mochi .ahoge::before,.pet-card .mini.mascot-mochi .ahoge::after{
-    content:"";position:absolute;width:12px;height:13px;
-    background:radial-gradient(ellipse at 30% 30%,#B7E2BE,#5FAF73 75%);
-    border-radius:60% 40% 60% 40% / 70% 50% 60% 40%;
-    box-shadow:inset -1.5px -2.5px 4px rgba(40,100,60,.3);
-  }
-  .pet-card .mini.mascot-mochi .ahoge::before{left:-1px;transform:rotate(-34deg)}
-  .pet-card .mini.mascot-mochi .ahoge::after{left:7px;transform:rotate(34deg)}
-  .pet-card .mini.mascot-mochi .foot{
-    position:absolute;bottom:0;width:11px;height:6px;z-index:0;
-    background:linear-gradient(180deg,#B59EDB,#7D5FB0);
-    border-radius:50%;box-shadow:inset -1px -2px 4px rgba(90,50,140,.4);
-  }
-  .pet-card .mini.mascot-mochi .foot.left{left:10px}.pet-card .mini.mascot-mochi .foot.right{right:10px}
-  .pet-card .mini.mascot-mochi .eye{top:21px;width:8px;height:9px;background:transparent;border:0}
-  .pet-card .mini.mascot-mochi .eye::before{
-    content:"";position:absolute;width:100%;height:2.5px;background:#26201a;border-radius:50%;top:3px;left:0;
-    box-shadow:0 4px 0 -0.5px #26201a;
-  }
-  .pet-card .mini.mascot-mochi .eye.l{left:13px}.pet-card .mini.mascot-mochi .eye.r{right:13px}
-  .pet-card .mini.mascot-mochi .blush{top:34px;width:11px;height:6px;background:#F5A9C6;opacity:.75}
-  .pet-card .mini.mascot-mochi .blush.l{left:5px}.pet-card .mini.mascot-mochi .blush.r{right:5px}
-  .pet-card .mini.mascot-mochi .mouth{
-    top:37px;width:16px;height:8px;
-    border:2px solid #26201a;border-top:0;border-radius:0 0 18px 18px;
-    background:rgba(255,200,220,.55);
-  }
-  .pet-card h4{margin:0 0 2px;font-size:17px;font-weight:800;color:var(--ink)}
-  .pet-card p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.45}
-
+  /* ===== 公共组件（滚动/翻卡/评分环/对话面板等） ===== */
   /* 进度环（姓名进度详情用） */
   .ring{width:84px;height:84px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 84px}
   .ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
-  .ring .hanzi{position:relative;z-index:1}
   .ring-track{fill:none;stroke:#F1E6D0;stroke-width:10}
   .ring-fill{fill:none;stroke:var(--primary);stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .3s}
   .ring-fill.success{stroke:var(--success)}
   .ring-fill.warn{stroke:var(--warn)}
-
   /* 翻卡（复习闪卡） */
   .flip-card{width:100%;aspect-ratio:3/4;border-radius:24px;perspective:1000px}
   .flip-inner{position:relative;width:100%;height:100%;border-radius:24px;transform-style:preserve-3d;transition:transform .6s;box-shadow:var(--shadow-card-2)}
@@ -723,25 +422,18 @@
   .flip-face{position:absolute;inset:0;border-radius:24px;backface-visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
   .flip-face.back{transform:rotateY(180deg);background:var(--primary-soft-2)}
   .flip-face.front{background:#fff}
-
   /* 得分环（评估反馈） */
   .score-ring{width:160px;height:160px;margin:0 auto 14px;position:relative}
   .score-ring svg{transform:rotate(-90deg)}
   .score-ring .text{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .score-ring .pct{font-size:36px;font-weight:900;color:var(--success);line-height:1}
-  .score-ring .lbl{font-size:13px;color:var(--ink-2);font-weight:700;margin-top:4px}
-
   /* 角落米字格水印装饰（不抢视觉） */
   .watermark{position:absolute;opacity:.045;pointer-events:none}
-
   /* 滚动区 */
   .scroll{padding:4px 20px 180px;overflow-y:auto;height:100%;scrollbar-width:none}
   .scroll::-webkit-scrollbar{display:none}
   .scroll-wrap{position:relative;overflow:hidden;flex:1;display:flex;flex-direction:column}
-
   /* 顶部返回 + icon 按钮 */
   .icon-btn{width:44px;height:44px;border-radius:14px;background:#fff;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:center;color:var(--ink-2);flex:0 0 44px;cursor:pointer;font-size:22px;font-weight:800}
-
   /* 底部按钮条（学习页通用）— A8：默认隐藏，用对话气泡和语音操作代替；引导阶段(协议/下载/配置/选宠)保留 buttons 结构 */
   .bottom-bar{
     position:absolute;left:0;right:0;bottom:0;
@@ -749,7 +441,6 @@
   }
   .bottom-bar .btn{width:100%}
   .bottom-bar .btn + .btn{margin-top:12px}
-
   /* A8：Chat Flow 底部对话面板 — 宠物/用户气泡自动滚动，替代原底部操作按钮
      - 学习阶段（7+）每屏最底部都会渲染 <div class="chat-flow"> 代替原来的 buttons
      - 宠物气泡左侧（小尾巴朝宠物方向）、用户气泡右侧；高度 190px，超过自动滚动 */
@@ -763,7 +454,7 @@
   }
   .chat-flow::before{content:"";flex:0 0 auto}
   .bubble{
-    max-width:82%;padding:10px 14px;font-size:15px;line-height:1.55;
+    max-width:62%;padding:10px 14px;font-size:15px;line-height:1.55;
     border-radius:16px 16px 16px 6px;
     box-shadow:0 2px 6px rgba(120,80,20,.08);
     animation:bubble-in .3s ease-out both;
@@ -780,15 +471,11 @@
     from{opacity:0;transform:translateY(8px)}
     to{opacity:1;transform:translateY(0)}
   }
-  .mic-hint{
-    align-self:center;margin:2px 0 4px;padding:6px 12px;border-radius:999px;
-    background:rgba(140,90,35,.08);color:var(--primary-deep);font-size:12px;font-weight:700;letter-spacing:1px
-  }
 
   /* ===== 各 screen 定制 ===== */
 
   /* 协议页 */
-  #agreement .screen{padding:24px 20px 32px;display:flex;flex-direction:column;background:linear-gradient(180deg,#FFF4DD 0%,var(--bg) 100%)}
+  #agreement{padding:24px 24px 32px;display:flex;flex-direction:column;background:linear-gradient(180deg,#FFF4DD 0%,var(--bg) 100%)}
   .agree-card{flex:1;background:#fff;border-radius:24px;padding:22px 20px;box-shadow:var(--shadow-card-2);overflow-y:auto;scrollbar-width:none}
   .agree-card h3{margin:0 0 10px;font-size:18px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:10px}
   .agree-card p{margin:0 0 12px;font-size:14px;line-height:1.7;color:var(--ink-2)}
@@ -808,7 +495,10 @@
   #onboard .step-ind{font-size:13px;color:var(--primary-deep);font-weight:700;letter-spacing:2px;margin-bottom:18px}
   #onboard h2{font-size:30px;line-height:1.35;font-weight:900;color:var(--ink);margin:0 0 10px}
   #onboard p{font-size:17px;line-height:1.75;color:var(--ink-2);margin:0 0 14px}
-  #onboard .buttons{margin-top:auto;padding-top:22px}
+  /* 通用按钮组：垂直排列、等间距、自动贴底，.buttons 与 .bottom-bar 同规格 */
+  .buttons,.bottom-bar{display:flex;flex-direction:column;gap:12px;margin-top:auto;padding-top:22px}
+  /* 主按钮未激活态（如协议页未勾选时）：保持橙色系 */
+  .btn-primary:disabled{background:var(--primary-soft);color:var(--primary-deep);box-shadow:none;cursor:not-allowed}
 
   /* 进度条（下载） */
   .progress-big{height:18px;border-radius:999px;background:#F1E6D0;overflow:hidden;margin:10px 0 4px}
@@ -915,7 +605,7 @@
   #review .content{padding:18px 24px 180px;display:flex;flex-direction:column;align-items:center}
 
   /* 收尾总结页 */
-  #wrapup .screen{padding:24px 20px 32px;display:flex;flex-direction:column;background:linear-gradient(180deg,#F3FAF4 0%,var(--bg) 100%)}
+  #wrapup{padding:24px 24px 32px;display:flex;flex-direction:column;background:linear-gradient(180deg,#F3FAF4 0%,var(--bg) 100%)}
   .trophy{
     width:120px;height:120px;margin:10px auto 18px;border-radius:50%;background:linear-gradient(135deg,#F4D27A,#D98A3C);
     display:flex;align-items:center;justify-content:center;color:#fff;font-family:"KaiTi","楷体_GB2312",serif;font-size:48px;font-weight:400;
@@ -1065,6 +755,11 @@
   .toolbar .pag{display:inline-flex;align-items:center;gap:10px;font-weight:800;color:var(--ink-2);font-size:14px}
   .toolbar .pag button{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;font-weight:900;font-size:16px;display:inline-flex;align-items:center;justify-content:center;font-family:inherit}
   .toolbar .pag button:disabled{opacity:.4}
+  /* 屏选择下拉框 */
+  .toolbar select{height:38px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--ink);font-family:inherit;font-weight:700;padding:0 10px;font-size:13px;max-width:340px;cursor:pointer}
+  /* 设计说明面板（单页模式下显示在当前屏下方） */
+  .design-note{width:100%;max-width:920px;margin:4px auto 0;padding:12px 18px;background:#FFF9EC;border:1.5px dashed var(--line-2);border-radius:14px;font-size:13px;line-height:1.7;color:var(--ink-2);display:none}
+  body.single-mode .design-note{display:block}
 
   /* 协议页展开全文 */
   .agree-detail{
@@ -1249,9 +944,119 @@
       <path d="M2 8.5 C6.5 4 11.5 4 16 4 C20.5 4 25 4 29 8.5" />
       <path d="M5 12 C8.5 9 11.5 9 15 9 C18.5 9 21.5 9 25 12" transform="translate(-2,0)"/>
       <path d="M8.5 15.5 C10.5 14 13.5 14 15.5 15.5" transform="translate(-1,0)"/>
+
       <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
     </symbol>
   </defs>
+</svg>
+
+<!-- ========== 吉祥物 SVG 手绘（更 Q 萌系：大头圆润 + 纯色高光 + 粗描边 + 大眼） ========== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="pet-robot" viewBox="0 0 100 100">
+    <line x1="50" y1="7" x2="50" y2="20" stroke="#3A2E28" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="50" cy="7" r="6.5" fill="#FFD76E" stroke="#3A2E28" stroke-width="3"/>
+    <rect class="ear left" x="11" y="30" width="9" height="20" rx="4.5" fill="#A9C6E2" stroke="#3A2E28" stroke-width="3"/>
+    <rect class="ear right" x="80" y="30" width="9" height="20" rx="4.5" fill="#A9C6E2" stroke="#3A2E28" stroke-width="3"/>
+    <rect x="17" y="18" width="66" height="56" rx="22" fill="#A9C6E2" stroke="#3A2E28" stroke-width="3.5"/>
+    <ellipse cx="35" cy="29" rx="13" ry="7.5" fill="#fff" opacity=".5"/>
+    <rect class="eye l" x="30" y="36" width="15" height="15" rx="4.5" fill="#1E3552" stroke="#0F1E30" stroke-width="2"/>
+    <rect class="eye r" x="55" y="36" width="15" height="15" rx="4.5" fill="#1E3552" stroke="#0F1E30" stroke-width="2"/>
+    <rect x="33.5" y="39.5" width="5" height="5" rx="1" fill="#8AD2FF"/>
+    <rect x="58.5" y="39.5" width="5" height="5" rx="1" fill="#8AD2FF"/>
+    <ellipse class="blush l" cx="26" cy="55" rx="5.5" ry="3.5" fill="#F08A8D"/>
+    <ellipse class="blush r" cx="74" cy="55" rx="5.5" ry="3.5" fill="#F08A8D"/>
+    <path class="mouth" d="M43 55 Q50 61 57 55" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+    <rect x="33" y="76" width="34" height="20" rx="10" fill="#A9C6E2" stroke="#3A2E28" stroke-width="3.5"/>
+    <line x1="39" y1="84" x2="61" y2="84" stroke="#fff" stroke-width="2" opacity=".55" stroke-linecap="round"/>
+    <rect x="35" y="93" width="11" height="6" rx="3" fill="#7BA2C9" stroke="#3A2E28" stroke-width="2.5"/>
+    <rect x="54" y="93" width="11" height="6" rx="3" fill="#7BA2C9" stroke="#3A2E28" stroke-width="2.5"/>
+  </symbol>
+  <symbol id="pet-octopus" viewBox="0 0 100 100">
+    <path d="M20 70 Q10 82 14 92 Q16 97 21 95" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M20 70 Q10 82 14 92 Q16 97 21 95" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M29 76 Q22 88 26 96 Q28 99 31 96" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M29 76 Q22 88 26 96 Q28 99 31 96" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M41 79 Q36 90 40 98 Q41 100 43 98" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M41 79 Q36 90 40 98 Q41 100 43 98" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M59 79 Q64 90 60 98 Q59 100 57 98" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M59 79 Q64 90 60 98 Q59 100 57 98" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M71 76 Q78 88 74 96 Q72 99 69 96" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M71 76 Q78 88 74 96 Q72 99 69 96" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M80 70 Q90 82 86 92 Q84 97 79 95" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M80 70 Q90 82 86 92 Q84 97 79 95" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="50" cy="44" r="33" fill="#F9AE9F" stroke="#3A2E28" stroke-width="3.5"/>
+    <ellipse cx="36" cy="29" rx="13" ry="8" fill="#fff" opacity=".5"/>
+    <circle class="eye l" cx="36" cy="45" r="9" fill="#26201A"/>
+    <circle class="eye r" cx="64" cy="45" r="9" fill="#26201A"/>
+    <circle cx="33.5" cy="42" r="3.2" fill="#fff"/>
+    <circle cx="61.5" cy="42" r="3.2" fill="#fff"/>
+    <circle cx="39" cy="48.5" r="1.3" fill="#fff"/>
+    <ellipse class="blush l" cx="26" cy="58" rx="5.5" ry="3.5" fill="#EC6A56"/>
+    <ellipse class="blush r" cx="74" cy="58" rx="5.5" ry="3.5" fill="#EC6A56"/>
+    <path class="mouth" d="M44 58 Q50 63 56 58" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="pet-dino" viewBox="0 0 100 100">
+    <path d="M29 24 L25 9 L37 19 Z" fill="#3F8852" stroke="#2B4A35" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M45 18 L46 3 L54 14 Z" fill="#3F8852" stroke="#2B4A35" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M63 20 L68 7 L73 22 Z" fill="#3F8852" stroke="#2B4A35" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="50" cy="46" r="32" fill="#8FC7A0" stroke="#2B4A35" stroke-width="3.5"/>
+    <ellipse cx="36" cy="30" rx="13" ry="8" fill="#fff" opacity=".45"/>
+    <circle class="eye l" cx="36" cy="46" r="9" fill="#26201A"/>
+    <circle class="eye r" cx="64" cy="46" r="9" fill="#26201A"/>
+    <circle cx="33.5" cy="43" r="3.2" fill="#fff"/>
+    <circle cx="61.5" cy="43" r="3.2" fill="#fff"/>
+    <ellipse class="blush l" cx="25" cy="58" rx="5.5" ry="3.5" fill="#E4755F" opacity=".85"/>
+    <ellipse class="blush r" cx="75" cy="58" rx="5.5" ry="3.5" fill="#E4755F" opacity=".85"/>
+    <path class="mouth" d="M42 60 Q50 66 58 60" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+    <path d="M49 61.5 L52 66 L55 61.5 Z" fill="#FFF7DC" stroke="#26201A" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M14 62 Q6 66 10 75" fill="none" stroke="#2B4A35" stroke-width="9" stroke-linecap="round"/>
+    <path d="M14 62 Q6 66 10 75" fill="none" stroke="#8FC7A0" stroke-width="6" stroke-linecap="round"/>
+    <path d="M86 62 Q94 66 90 75" fill="none" stroke="#2B4A35" stroke-width="9" stroke-linecap="round"/>
+    <path d="M86 62 Q94 66 90 75" fill="none" stroke="#8FC7A0" stroke-width="6" stroke-linecap="round"/>
+    <ellipse cx="38" cy="88" rx="8" ry="5" fill="#549C68" stroke="#2B4A35" stroke-width="2.5"/>
+    <ellipse cx="62" cy="88" rx="8" ry="5" fill="#549C68" stroke="#2B4A35" stroke-width="2.5"/>
+  </symbol>
+  <symbol id="pet-mochi" viewBox="0 0 100 100">
+    <ellipse cx="42" cy="11" rx="6.5" ry="4" transform="rotate(-32 42 11)" fill="#7FC08E" stroke="#2B4A35" stroke-width="2.5"/>
+    <ellipse cx="58" cy="11" rx="6.5" ry="4" transform="rotate(32 58 11)" fill="#7FC08E" stroke="#2B4A35" stroke-width="2.5"/>
+    <circle cx="50" cy="53" r="35" fill="#D2BCEF" stroke="#4A3270" stroke-width="3.5"/>
+    <ellipse cx="36" cy="33" rx="13" ry="8" fill="#fff" opacity=".5"/>
+    <path class="eye l" d="M31 46 Q36 39 41 46" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+    <path class="eye r" d="M59 46 Q64 39 69 46" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+    <ellipse class="blush l" cx="27" cy="59" rx="5.5" ry="3.5" fill="#EF8FB2" opacity=".9"/>
+    <ellipse class="blush r" cx="73" cy="59" rx="5.5" ry="3.5" fill="#EF8FB2" opacity=".9"/>
+    <path class="mouth" d="M42 61 Q50 69 58 61 Z" fill="#8E6FB3" stroke="#26201A" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M46 62 Q50 66 54 62" fill="#F2E8FB" stroke="none"/>
+    <ellipse cx="36" cy="91" rx="8" ry="4.5" fill="#A48BD6" stroke="#4A3270" stroke-width="2.5"/>
+    <ellipse cx="64" cy="91" rx="8" ry="4.5" fill="#A48BD6" stroke="#4A3270" stroke-width="2.5"/>
+  </symbol>
+  <symbol id="pet-teach" viewBox="0 0 100 100">
+    <path d="M20 68 Q10 80 14 90 Q16 95 21 93" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M20 68 Q10 80 14 90 Q16 95 21 93" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M29 74 Q22 86 26 94 Q28 97 31 94" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M29 74 Q22 86 26 94 Q28 97 31 94" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M41 77 Q36 88 40 96 Q41 98 43 96" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M41 77 Q36 88 40 96 Q41 98 43 96" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M59 77 Q64 88 60 96 Q59 98 57 96" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M59 77 Q64 88 60 96 Q59 98 57 96" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M71 74 Q78 86 74 94 Q72 97 69 94" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M71 74 Q78 86 74 94 Q72 97 69 94" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <path d="M80 68 Q90 80 86 90 Q84 95 79 93" fill="none" stroke="#3A2E28" stroke-width="12" stroke-linecap="round"/>
+    <path d="M80 68 Q90 80 86 90 Q84 95 79 93" fill="none" stroke="#F0A193" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="50" cy="44" r="30" fill="#F9AE9F" stroke="#3A2E28" stroke-width="3.5"/>
+    <ellipse cx="37" cy="30" rx="11" ry="7" fill="#fff" opacity=".5"/>
+    <circle class="eye l" cx="37" cy="44" r="8" fill="#26201A"/>
+    <circle class="eye r" cx="63" cy="44" r="8" fill="#26201A"/>
+    <circle cx="34.5" cy="41" r="2.8" fill="#fff"/>
+    <circle cx="60.5" cy="41" r="2.8" fill="#fff"/>
+    <ellipse class="blush l" cx="27" cy="56" rx="5" ry="3.2" fill="#EC6A56"/>
+    <ellipse class="blush r" cx="73" cy="56" rx="5" ry="3.2" fill="#EC6A56"/>
+    <path class="mouth" d="M45 56 Q50 61 55 56" fill="none" stroke="#26201A" stroke-width="3" stroke-linecap="round"/>
+    <path d="M28 27 L50 18 L72 27 L50 36 Z" fill="#3E649E" stroke="#1D2F4D" stroke-width="2.5" stroke-linejoin="round"/>
+    <ellipse cx="50" cy="17" rx="7" ry="3.5" fill="#F7C95F" stroke="#1D2F4D" stroke-width="2"/>
+    <circle cx="50" cy="28" r="2.5" fill="#F7C95F" stroke="#1D2F4D" stroke-width="1.5"/>
+    <path d="M50 28 L50 42" stroke="#1D2F4D" stroke-width="1.5"/>
+  </symbol>
 </svg>
 
 <!-- 屏幕标题说明（26 屏全量设计，除语音播放外全部交互可点） -->
@@ -1266,22 +1071,20 @@
 
 <!-- ========== 顶部操作条：总览模式 ↔ 单页模式切换，屏号导航 ========== -->
 <div class="toolbar">
-  <div class="switch" id="modeSwitch">
-    <div class="box"></div>
-    <span id="modeLabel">总览模式 · 对照 26 屏看 · 点此切单页走流程</span>
-  </div>
+  <select id="screenSelect" title="选择屏"></select>
   <div class="pag">
     <button id="prevBtn" disabled>‹</button>
     <span id="pagText">屏 1 / 26</span>
     <button id="nextBtn">›</button>
   </div>
 </div>
+<div class="design-note" id="designNote"></div>
 
-<!-- ====================== [0/24] 启动 Splash 加载页 ====================== -->
+<!-- ====================== [0/26] 启动 Splash 加载页 ====================== -->
 <div class="phone">
   <span class="label">⓪ 启动 · Splash 加载页</span>
   <div class="notch"></div>
-  <div class="screen guide-screen" id="splash" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 60%,#FFEBD1 100%);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:196px 36px 88px">
+  <div class="screen guide-screen" id="splash" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 60%,#FFEBD1 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px">
     <svg class="watermark" style="position:absolute;right:-70px;top:-30px;width:240px;height:240px;opacity:.45;display:block"><use href="#wm-mizige"/></svg>
     <svg class="watermark" style="position:absolute;left:-80px;bottom:-30px;width:260px;height:260px;opacity:.4;display:block"><use href="#wm-mizige"/></svg>
     <div style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:0">
@@ -1316,23 +1119,29 @@
       <p style="margin:16px 0 0;color:var(--ink-2);font-size:15px;letter-spacing:2.5px;font-family:'KaiTi','楷体_GB2312',serif;text-align:center;line-height:1.6">
         成年朋友陪伴式识字
       </p>
-      <div style="margin-top:96px;display:flex;gap:10px;align-items:center">
+      <div style="margin-top:22px;display:flex;gap:10px;align-items:center">
         <i style="width:8px;height:8px;border-radius:50%;background:var(--hong);animation:blink 1.2s infinite 0s;display:block"></i>
         <i style="width:8px;height:8px;border-radius:50%;background:var(--hong);animation:blink 1.2s infinite .2s;opacity:.55;display:block"></i>
         <i style="width:8px;height:8px;border-radius:50%;background:var(--hong);animation:blink 1.2s infinite .4s;opacity:.3;display:block"></i>
       </div>
+      <div class="cap" style="margin-top:14px;color:var(--ink-3);letter-spacing:2px">正在加载语音老师…</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 <style>@keyframes blink{0%,80%,100%{transform:scale(.6);opacity:.35}40%{transform:scale(1.1);opacity:1}}</style>
 
-<!-- ====================== [1/24] 协议确认页（用户刚提的合规要求）====================== -->
+<!-- ====================== [1/26] 协议确认页（用户刚提的合规要求）====================== -->
 <div class="phone">
-  <span class="label">① 1/7 · 用户协议 &amp; 隐私确认</span>
+  <span class="label">① 1/8 · 用户协议 &amp; 隐私确认</span>
   <div class="notch"></div>
   <div class="screen guide-screen" id="agreement">
-    <svg class="watermark" style="right:-50px;top:-10px;width:200px;height:200px"><use href="#wm-mizige"/></svg>
-    <svg class="watermark" style="left:-60px;bottom:20px;width:240px;height:240px"><use href="#wm-mizige"/></svg>
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+    </div>
 
     <h1 class="t-1" style="font-size:24px;margin:0 0 6px">开始前，请家人代为确认</h1>
     <p class="sub" style="margin:0 0 16px;font-size:14.5px">
@@ -1370,74 +1179,68 @@
       </div>
     </div>
 
-    <div class="bottom-bar">
-      <button class="btn btn-primary btn-block goto-btn agree-submit btn-lg" data-goto="2" disabled style="opacity:.55;cursor:not-allowed;filter:grayscale(.25);box-shadow:none">
+    <div class="buttons">
+      <button class="btn btn-primary btn-block goto-btn agree-submit btn-md" data-goto="3" disabled>
         <span>都同意了，下一步</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
-      <button class="btn btn-outline btn-block btn-lg" type="button">
+      <button class="btn btn-outline btn-block btn-md" type="button">
         <span>不同意，暂不使用</span>
       </button>
     </div>
   </div>
 </div>
 
-<!-- ====================== [2/24] 引导 1/7 · 首次下载语音包（反序修正：先下载才能就绪） ====================== -->
+<!-- ====================== [2/26] 引导 1/7 · 首次下载语音包（反序修正：先下载才能就绪） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">② 1/7 · 首次 · 下载语音包</span>
+  <span class="label">② 2/8 · 首次 · 下载语音包</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
 
     <h2>第一次用<br>先把声音老师<br><span class="hanzi mid" style="color:var(--primary-deep)">装进来</span></h2>
     <p>建议连家里 Wi-Fi 下载，不用手机流量。下载完就再也不用网络，随时都能说话。</p>
 
-    <div class="card" style="padding:18px;box-shadow:var(--shadow-card)">
+    <div class="card">
       <div class="between">
         <div class="t-3" style="font-size:17px">离线语音包 · 中文女声 + 中文识别</div>
-        <span class="chip warn">42%</span>
+        <span class="chip warn" id="dlPct">42%</span>
       </div>
-      <div class="progress-big" style="margin-top:12px"><i style="width:42%"></i></div>
+      <div class="progress-big" style="margin-top:12px" id="dlBar"><i style="width:42%"></i></div>
       <div class="row" style="margin-top:10px;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span class="cap">70.6 MB / 168 MB</span>
-        <span class="cap">家里 Wi-Fi 下，大约还要 1 分 20 秒</span>
+        <span class="cap" id="dlMB">70.6 MB / 168 MB</span>
+        <span class="cap" id="dlTime">家里 Wi-Fi 下，大约还要 1 分 20 秒</span>
       </div>
+      <div class="cap" style="margin-top:10px;color:var(--primary-deep);font-weight:700" id="dlState">正在下载，请保持网络连接</div>
     </div>
 
     <div class="buttons">
-      <!-- 取消「系统声音兜底」：代码里 STT 不支持系统 fallback，双端不对称；168MB 国内源下载也够快，统一先下完 -->
-      <button class="btn btn-outline goto-btn btn-block btn-lg" data-goto="4" style="background: #fff; border: 1.5px solid var(--line-2); color: var(--ink-2);">
+      <!-- 语音包不可跳过：仅支持暂停/继续下载，下完自动解锁下一步（无「稍后再下」出口） -->
+      <button class="btn btn-outline btn-block btn-md" id="dlToggle">
         <svg class="ic"><use href="#i-refresh"/></svg>
-        <span>先暂停，稍后再下</span>
+        <span id="dlToggleText">暂停下载</span>
       </button>
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="4" id="dlDone" style="display:none">
+        <span>下载完成 · 继续</span>
+      </button>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [3/25] 引导 2/8 · 配置 AI 老师（家人协助） ====================== -->
+<!-- ====================== [3/26] 引导 2/8 · 配置 AI 老师（家人协助） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">③ 2/8 · 家人协助 · 配置 AI 老师</span>
+  <span class="label">③ 3/8 · 家人协助 · 配置 AI 老师</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#F8FBFF 0%,#EDF3FC 100%)">
 
     <h2>让写字更准一点<br><span class="hanzi mid" style="color:#3D649E">请家人来连一下</span></h2>
     <p>这个 App 主打 AI 识字评估，需要家人帮忙连一下线上老师。连好了它能更准地看出你笔画哪里不对，后面你说的话它也会更懂你。</p>
 
-    <div class="mascot-wrap idle" style="right:14px;bottom:18px;width:80px;height:104px">
-      <div class="mascot mascot-teach mascot-robot">
-        <div class="antenna"></div>
-        <div class="ear left"></div><div class="ear right"></div>
-        <div class="body"></div>
-        <div class="face">
-          <div class="eye l"></div><div class="eye r"></div>
-          <div class="blush l"></div><div class="blush r"></div>
-          <div class="mouth-smile"></div>
-        </div>
-        <div class="teacher-hat"></div>
-      </div>
-      <div class="idle-dots"><i></i><i></i><i></i></div>
-    </div>
+    
 
-    <div class="card" style="padding:18px;box-shadow:var(--shadow-card)">
+    <div class="card">
       <div class="row" style="gap:12px;align-items:flex-start">
         <div class="ico" style="background:#DCE7F7;color:#3D649E"><svg class="ic-lg"><use href="#i-ai"/></svg></div>
         <div class="col" style="gap:4px;flex:1">
@@ -1473,17 +1276,21 @@
     </div>
 
     <div class="buttons">
-      <button class="btn btn-primary goto-btn btn-block btn-lg" data-goto="4">
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="5">
         <span>家人配置好了 · 继续</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
-  </div>
+  
+    <div class="mascot-wrap idle" style="right:14px;bottom:18px;width:80px;height:104px">
+      <svg class="mascot mascot-teach mascot-robot" viewBox="0 0 100 100"><use href="#pet-teach"/></svg>
+      <div class="idle-dots"><i></i><i></i><i></i></div>
+    </div>
+</div>
 </div>
 
-<!-- ====================== [4/25] 引导 3/8 · 语音就绪 · 小伙伴欢迎 ====================== -->
+<!-- ====================== [4/26] 引导 3/8 · 语音就绪 · 小伙伴欢迎 ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">④ 3/8 · 欢迎 · 语音已就绪</span>
+  <span class="label">④ 4/8 · 欢迎 · 语音已就绪</span>
   <div class="notch"></div>
   <div class="screen guide-screen">
 
@@ -1491,26 +1298,9 @@
     <p>说话和写字的基础准备已经完成，下一页选一个你喜欢的小伙伴就可以开始啦。</p>
 
     <!-- 吉祥物常驻右下角（缩小尺寸，不再挡中间） -->
-    <div class="mascot-wrap speaking">
-      <div class="speak-bubble" style="min-width:140px">
-        都准备好了，我们继续！
-      </div>
-      <div class="mascot mascot-robot">
-        <div class="antenna"></div>
-        <div class="ear left"></div><div class="ear right"></div>
-        <div class="body"></div>
-        <div class="face">
-          <div class="eye l"></div><div class="eye r"></div>
-          <div class="blush l"></div><div class="blush r"></div>
-          <div class="mouth-smile"></div>
-        </div>
-      </div>
-      <div class="voice-visual">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
-    </div>
+    
 
-    <div class="card" style="padding:16px 16px 18px;margin-top:2px;box-shadow:var(--shadow-card)">
+    <div class="card" style="margin-top:2px;">
       <div class="between">
         <div class="row" style="gap:10px">
           <div class="ico" style="background:#EDF5EF;color:#387448"><svg class="ic-lg"><use href="#i-speak"/></svg></div>
@@ -1526,54 +1316,37 @@
     </div>
 
     <div class="buttons">
-      <button class="btn btn-primary goto-btn btn-block btn-lg" data-goto="5">
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="6">
         <span>好了，继续</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
-  </div>
+  
+    <div class="mascot-wrap speaking">
+      <div class="speak-bubble" style="min-width:140px">
+        都准备好了，我们继续！
+      </div>
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+      <div class="voice-visual">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+</div>
 </div>
 
-<!-- ====================== [4/24] 引导 3/7 · 选小伙伴（宠物必选，交互靠它表现三态） ====================== -->
+<!-- ====================== [4/26] 引导 3/7 · 选小伙伴（宠物必选，交互靠它表现三态） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">④ 3/7 · 选一个小伙伴陪伴你</span>
+  <span class="label">⑤ 5/8 · 选一个小伙伴陪伴你</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#FFF4DD 0%,#FFE8C3 100%)">
     <h2>选一个小伙伴<br>以后陪你一起写字</h2>
     <p>说「第几个」就行，或者直接点卡片。每个都有自己的样子和性格。</p>
 
     <!-- 吉祥物常驻右下角（预览用 speaking，移到底部不压 4 张宠物卡片） → 默认机器人 -->
-    <div class="mascot-wrap speaking">
-      <div class="speak-bubble" style="min-width:130px">
-        选一个你喜欢的～
-      </div>
-      <div class="mascot mascot-robot">
-        <div class="antenna"></div>
-        <div class="ear left"></div><div class="ear right"></div>
-        <div class="body"></div>
-        <div class="face">
-          <div class="eye l"></div><div class="eye r"></div>
-          <div class="blush l"></div><div class="blush r"></div>
-          <div class="mouth"></div>
-        </div>
-      </div>
-      <div class="voice-visual">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
-    </div>
+    
 
     <div class="pet-list">
       <div class="pet-card on" data-pet="robot">
-        <div class="mini mascot-robot">
-          <div class="antenna"></div>
-          <div class="ear left"></div><div class="ear right"></div>
-          <div class="body"></div>
-          <div class="face">
-            <div class="eye l"></div><div class="eye r"></div>
-            <div class="blush l"></div><div class="blush r"></div>
-            <div class="mouth"></div>
-          </div>
-        </div>
+        <svg class="mini mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
         <div class="col" style="gap:4px">
           <h4>一、机器人</h4>
           <p>头顶小天线方方的，活泼开朗，说话节奏快一点，喜欢鼓励你继续加油。</p>
@@ -1581,50 +1354,21 @@
         <svg class="ic-lg" style="color:var(--primary-deep)"><use href="#i-check"/></svg>
       </div>
       <div class="pet-card" data-pet="octopus">
-        <div class="mini mascot-octopus">
-          <div class="tentacle tl"></div><div class="tentacle tr"></div>
-          <div class="tentacle l"></div><div class="tentacle r"></div>
-          <div class="tentacle bl"></div><div class="tentacle br"></div>
-          <div class="body"></div>
-          <div class="face">
-            <div class="eye l"></div><div class="eye r"></div>
-            <div class="blush l"></div><div class="blush r"></div>
-            <div class="mouth"></div>
-          </div>
-        </div>
+        <svg class="mini mascot-octopus" viewBox="0 0 100 100"><use href="#pet-octopus"/></svg>
         <div class="col" style="gap:4px">
           <h4>二、小章鱼</h4>
           <p>八条小触手圆脑袋，温柔有耐心，讲解一步一步慢慢说，适合第一次写字的朋友。</p>
         </div>
       </div>
       <div class="pet-card" data-pet="dino">
-        <div class="mini mascot-dino">
-          <div class="spine-mid"></div><div class="spine"></div>
-          <div class="arm left"></div><div class="arm right"></div>
-          <div class="foot left"></div><div class="foot right"></div>
-          <div class="body"></div>
-          <div class="face">
-            <div class="eye l"></div><div class="eye r"></div>
-            <div class="blush l"></div><div class="blush r"></div>
-            <div class="mouth"></div>
-          </div>
-        </div>
+        <svg class="mini mascot-dino" viewBox="0 0 100 100"><use href="#pet-dino"/></svg>
         <div class="col" style="gap:4px">
           <h4>三、小恐龙</h4>
           <p>背脊三根小刺，沉稳认真，讲解写不好的地方很仔细，适合慢慢练习。</p>
         </div>
       </div>
       <div class="pet-card" data-pet="mochi">
-        <div class="mini mascot-mochi">
-          <div class="ahoge"></div>
-          <div class="foot left"></div><div class="foot right"></div>
-          <div class="body"></div>
-          <div class="face">
-            <div class="eye l"></div><div class="eye r"></div>
-            <div class="blush l"></div><div class="blush r"></div>
-            <div class="mouth"></div>
-          </div>
-        </div>
+        <svg class="mini mascot-mochi" viewBox="0 0 100 100"><use href="#pet-mochi"/></svg>
         <div class="col" style="gap:4px">
           <h4>四、小团子</h4>
           <p>头顶两片小叶子软软的，细心温柔，会随时问你会不会，有任何问题都可以慢慢说。</p>
@@ -1634,17 +1378,26 @@
 
     <div class="buttons">
       <!-- 宠物必选：去掉了"暂时不选"按钮，交互三态全靠它，必须选定才能往下走 -->
-      <button class="btn btn-primary goto-btn pet-next btn-block btn-lg" data-goto="6">
+      <button class="btn btn-primary goto-btn pet-next btn-block btn-md" data-goto="7">
         <span>就选机器人，下一步</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
-  </div>
+  
+    <div class="mascot-wrap speaking">
+      <div class="speak-bubble" style="min-width:130px">
+        选一个你喜欢的～
+      </div>
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+      <div class="voice-visual">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+</div>
 </div>
 
-<!-- ====================== [5/24] 引导 4/7 · 姓名录入（不强制"说建档"，说名字/建档/我叫XX都能触发AI判断） ====================== -->
+<!-- ====================== [5/26] 引导 4/7 · 姓名录入（不强制"说建档"，说名字/建档/我叫XX都能触发AI判断） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">⑤ 4/7 · 先学会写自己的名字</span>
+  <span class="label">⑥ 6/8 · 先学会写自己的名字</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
 
@@ -1656,21 +1409,7 @@
       我叫 · 你 · 的 · 名 · 字
     </div>
     <!-- 吉祥物 listening 放右下角（占 80×104，不挡中间表单 + 3 个汉字大印章） -->
-    <div class="mascot-wrap listening">
-      <div class="mascot mascot-robot">
-        <div class="antenna"></div>
-        <div class="ear left"></div><div class="ear right"></div>
-        <div class="body"></div>
-        <div class="face">
-          <div class="eye l"></div><div class="eye r"></div>
-          <div class="blush l"></div><div class="blush r"></div>
-          <div class="mouth"></div>
-        </div>
-      </div>
-      <div class="voice-visual">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
-    </div>
+    
 
     <div class="form" style="background:#fff;border-radius:22px;padding:18px 18px 22px;box-shadow:var(--shadow-card-2)">
       <div class="row" style="gap:10px;margin-bottom:12px">
@@ -1685,14 +1424,13 @@
         <div class="char-seal current"><span class="hanzi big" style="color:var(--primary-deep)">名</span></div>
         <div class="char-seal current"><span class="hanzi big" style="color:var(--primary-deep)">字</span></div>
       </div>
-      <input type="text" value="你的名字" maxlength="6"
-             style="width:100%;height:60px;border-radius:16px;border:1.5px solid #E8D7B7;background:#FFFBF1;padding:0 16px;font-size:28px;font-family:'KaiTi','楷体_GB2312',serif;color:var(--ink);outline:none;letter-spacing:8px;text-align:center;font-weight:400;box-shadow:inset 0 1px 4px rgba(120,60,10,.06)">
-      <div class="between" style="margin-top:14px;flex-wrap:wrap;gap:8px">
-        <button class="btn btn-ghost btn-md" style="flex: 1; min-width: 140px;">
+      <input type="text" value="你的名字" maxlength="6" class="input-lg">>
+      <div class="btn-pair" style="margin-top:14px">
+        <button class="btn btn-ghost btn-md">
           <svg class="ic-sm"><use href="#i-repeat"/></svg>
           <span>再说一遍名字</span>
         </button>
-        <button class="btn btn-primary goto-btn btn-md" data-goto="7" style="flex: 1; min-width: 140px;">
+        <button class="btn btn-primary goto-btn btn-md" data-goto="8">
           <svg class="ic-sm" style="color:#fff"><use href="#i-check"/></svg>
           <span>对，就是这个</span>
         </button>
@@ -1701,16 +1439,23 @@
 
     <div class="buttons">
       <!-- 去掉括号说明；不再强制说"建档"触发，改为自然口语（名字/我叫/建档都能AI识别意图） -->
-      <button class="btn btn-outline goto-btn btn-block btn-lg" data-goto="7" style="background: #fff; border: 1.5px solid var(--primary-soft); color: var(--primary-deep);">
+      <button class="btn btn-outline goto-btn btn-block btn-md" data-goto="9" style="background: #fff; border: 1.5px solid var(--primary-soft); color: var(--primary-deep);">
         <span>先跳过，以后再写名字</span>
       </button>
     </div>
-  </div>
+  
+    <div class="mascot-wrap listening">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+      <div class="voice-visual">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+</div>
 </div>
 
-<!-- ====================== [6/24] 引导 · 名字优先计划展示（5/7） ====================== -->
+<!-- ====================== [6/26] 引导 · 名字优先计划展示（5/7） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">⑥ 5/7 · 你的名字学习计划</span>
+  <span class="label">⑦ 7/8 · 你的名字学习计划</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#FFF4DD 0%,#FFE8C3 100%)">
     <h2>好的，接下来<br>我们一起来练<br>写你的名字</h2>
@@ -1771,21 +1516,24 @@
     </div>
 
     <div class="buttons">
-      <button class="btn btn-primary goto-btn btn-block btn-lg" data-goto="8">
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="9">
         <span>现在就开始学第一个字</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
-      <button class="btn btn-ghost goto-btn btn-block btn-lg" data-goto="8" style="margin-top: 12px;">
+      <button class="btn btn-ghost goto-btn btn-block btn-md" data-goto="23" style="margin-top: 12px;">
         <span>先看看我的签名长什么样</span>
         <svg class="ic"><use href="#i-sign"/></svg>
       </button>
     </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+    </div>
   </div>
 </div>
 
-<!-- ====================== [7/24] 引导 · 提问准备（6/7） ====================== -->
+<!-- ====================== [7/26] 引导 · 提问准备（6/7） ====================== -->
 <div class="phone" id="onboard">
-  <span class="label">⑦ 6/7 · 准备开始 · 学习方式说明</span>
+  <span class="label">⑧ 8/8 · 准备开始 · 学习方式说明</span>
   <div class="notch"></div>
   <div class="screen guide-screen" style="background:linear-gradient(180deg,#F3FAF4 0%,#FFF4DD 100%)">
     <h2>等下<br>不会写就说「提示一下」<br>想休息就说「结束」</h2>
@@ -1796,27 +1544,10 @@
       <div class="speak-bubble" style="position:absolute;left:0;top:0;min-width:160px;max-width:195px;font-size:14px;line-height:1.55">
         准备好了就跟我说「开始」，我们先从最容易的字开始写哦～
       </div>
-      <div class="mascot-wrap speaking" style="position:absolute;right:0;bottom:0;width:100px;height:124px">
-        <div class="mascot mascot-robot" style="width:92px;height:92px;margin:0">
-          <div class="antenna" style="top:-14px;height:22px"></div>
-          <div class="ear left" style="top:28px;width:11px;height:24px"></div>
-          <div class="ear right" style="top:28px;width:11px;height:24px"></div>
-          <div class="body" style="top:10px;width:72px;height:68px"></div>
-          <div class="face">
-            <div class="eye l" style="top:30px;left:20px;width:13px;height:13px"></div>
-            <div class="eye r" style="top:30px;right:20px;width:13px;height:13px"></div>
-            <div class="blush l" style="top:54px;left:12px;width:16px;height:8px"></div>
-            <div class="blush r" style="top:54px;right:12px;width:16px;height:8px"></div>
-            <div class="mouth" style="top:58px;width:32px;height:14px;border-width:2.5px"></div>
-          </div>
-        </div>
-        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
-          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-        </div>
-      </div>
+      
     </div>
 
-    <div class="card" style="padding:14px 16px">
+    <div class="card card-sm" style="
       <div class="row" style="gap:12px;margin-bottom:12px">
         <div class="ico" style="background:#EDF5EF;color:#387448"><svg class="ic-lg"><use href="#i-speak"/></svg></div>
         <div class="col" style="gap:3px;flex:1">
@@ -1841,25 +1572,32 @@
           <div class="cap" style="margin-top:4px">结束本次</div>
         </div>
       </div>
-    </div>
+    
+    <div class="mascot-wrap speaking" style="position:absolute;right:0;bottom:0;width:100px;height:124px">
+        <svg class="mascot mascot-robot" style="width:92px;height:92px;margin:0" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
 
     <div class="buttons">
-      <button class="btn btn-primary goto-btn btn-block btn-lg" data-goto="9">
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="11">
         <span>我准备好了，开始学「弓」</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
   </div>
+
+    
+  </div>
 </div>
 
-<!-- ====================== [8/24] 首页 Home（极简3卡 · 右下吉祥物常驻） ====================== -->
+<!-- ====================== [8/26] 首页 Home（极简3卡 · 右下吉祥物常驻） ====================== -->
 <div class="phone">
   <span class="label">⑧ 首页 · 极简 3 卡导航（最常用功能）</span>
   <div class="notch"></div>
   <div class="screen" id="home">
     <svg class="watermark" style="right:-40px;top:10px;width:180px;height:180px"><use href="#wm-mizige"/></svg>
     <svg class="watermark" style="left:-50px;bottom:60px;width:220px;height:220px"><use href="#wm-mizige"/></svg>
-    <span class="screen-label">首页 · 直接说就可以操作</span>
 
     <!-- 顶部：品牌印章 + 楷体 logo + 家人头像 + 设置 -->
     <div class="brand between">
@@ -1886,7 +1624,7 @@
       </div>
       <div class="row">
         <div class="avatar">你</div>
-        <div class="icon-btn goto-btn" data-goto="24" title="设置">
+        <div class="icon-btn goto-btn" data-goto="25" title="设置">
           <svg class="ic"><use href="#i-gear"/></svg>
         </div>
       </div>
@@ -1915,9 +1653,8 @@
           <div class="progress"><i style="width:34%"></i></div>
           <div class="between" style="margin-top:14px">
             <div class="sub" style="font-size:13.5px">预计再练 4 次 · 就能写完整签名</div>
-            <button class="btn btn-primary cta goto-btn btn-md" data-goto="10">
+            <button class="btn btn-primary cta goto-btn btn-md" data-goto="11">
               <span>继续练习</span>
-              <svg class="ic-sm" style="color:#fff"><use href="#i-speak"/></svg>
             </button>
           </div>
         </div>
@@ -1939,9 +1676,8 @@
             <div class="char-seal" style="width:56px;height:56px;background:#FBF0D7"><span class="hanzi mid" style="color:#896319">口</span></div>
             <div class="char-seal" style="width:56px;height:56px;background:#E4EEF8"><span class="hanzi mid" style="color:#3E6A9E">日</span></div>
             <div style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:flex-end">
-              <button class="btn btn-ghost cta goto-btn btn-md" data-goto="19">
+              <button class="btn btn-ghost cta goto-btn btn-md" data-goto="20">
                 <span>先复习这 3 个</span>
-                <svg class="ic-sm"><use href="#i-speak"/></svg>
               </button>
             </div>
           </div>
@@ -1958,24 +1694,7 @@
           <div class="sub" style="margin-left:60px;margin-top:-6px;margin-bottom:14px;font-size:13.5px">直接说「我想学…」就插在最前面学，或让家人帮忙写</div>
           <div class="expand-box">
             <!-- 吉祥物小版 listening：代替麦克风图标（用户明确要求不要麦克风） -->
-            <div class="mascot-wrap listening" style="position:relative;width:44px;height:48px;right:auto;bottom:auto;flex:0 0 44px;pointer-events:none">
-              <div class="mascot mascot-robot" style="width:44px;height:44px">
-                <div class="antenna" style="top:-6.7px;height:11.0px"></div>
-                  <div class="ear left" style="top:13.4px;width:5.5px;height:11.6px"></div>
-                  <div class="ear right" style="top:13.4px;width:5.5px;height:11.6px"></div>
-                  <div class="body" style="top:4.9px;width:35.4px;height:33.0px"></div>
-                  <div class="face">
-                    <div class="eye l" style="top:14.7px;left:9.8px;width:6.1px;height:6.1px"></div>
-                    <div class="eye r" style="top:14.7px;right:9.8px;width:6.1px;height:6.1px"></div>
-                    <div class="blush l" style="top:26.3px;left:6.1px;width:7.9px;height:3.7px"></div>
-                    <div class="blush r" style="top:26.3px;right:6.1px;width:7.9px;height:3.7px"></div>
-                    <div class="mouth" style="top:28.1px;width:15.9px;height:6.7px;border-width:1.2px"></div>
-                  </div>
-              </div>
-              <div class="voice-visual" style="width:40px;left:50%;transform:translateX(-50%);bottom:-6px;height:12px">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-              </div>
-            </div>
+            
             <span class="sub" style="color:var(--ink-2);font-size:14px">对我说「我想学写『药』字」就可以啦</span>
           </div>
         </div>
@@ -1990,7 +1709,7 @@
                 <div class="sub" style="font-size:13.5px">学完名字 · 就从这些常用的开始</div>
               </div>
             </div>
-            <span class="chip outline goto-btn" data-goto="23" style="cursor:pointer">切换 ›</span>
+            <span class="chip outline goto-btn" data-goto="24" style="cursor:pointer">切换 ›</span>
           </div>
           <div class="progress"><i style="width:25%"></i></div>
           <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -2009,50 +1728,44 @@
     </div>
 
     <!-- 右下常驻悬浮吉祥物 · idle 态（首页默认等待用户说话） -->
-    <div class="mascot-wrap idle">
-      <!-- 思考云（上次听到用户说过的话，浮现后会消失，这里示意最近一句） -->
-      <div class="think-cloud lines-2" style="min-height:54px">
-        你想写哪个字？直接和我说就行～
-      </div>
-      <div class="mascot mascot-robot" style="">
-        <div class="antenna" style="top:-11.0px;height:18.0px"></div>
-          <div class="ear left" style="top:22.0px;width:9.0px;height:19.0px"></div>
-          <div class="ear right" style="top:22.0px;width:9.0px;height:19.0px"></div>
-          <div class="body" style="top:8.0px;width:58.0px;height:54.0px"></div>
-          <div class="face">
-            <div class="eye l" style="top:24.0px;left:16.0px;width:10.0px;height:10.0px"></div>
-            <div class="eye r" style="top:24.0px;right:16.0px;width:10.0px;height:10.0px"></div>
-            <div class="blush l" style="top:43.0px;left:10.0px;width:13.0px;height:6.0px"></div>
-            <div class="blush r" style="top:43.0px;right:10.0px;width:13.0px;height:6.0px"></div>
-            <div class="mouth" style="top:46.0px;width:26.0px;height:11.0px;border-width:2.0px"></div>
-          </div>
-      </div>
-      <div class="voice-visual">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
-    </div>
+    
 
     <!-- A8：Chat Flow 底部对话面板 · 首页 -->
     <div class="chat-flow">
       <div class="bubble pet">今天我们先从名字里的字开始吧，想先学哪个？直接跟我说就好～</div>
       <div class="bubble user">我想学写我的姓</div>
       <div class="bubble pet">好呀！你的姓是「张」，左边一个弓、右边一个长，我们现在就开始～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap listening" style="position:relative;width:44px;height:48px;right:auto;bottom:auto;flex:0 0 44px;pointer-events:none">
+              <svg class="mascot mascot-robot" style="width:44px;height:44px" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+              <div class="voice-visual" style="width:40px;left:50%;transform:translateX(-50%);bottom:-6px;height:12px">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+
+    <div class="mascot-wrap idle">
+      <!-- 思考云（上次听到用户说过的话，浮现后会消失，这里示意最近一句） -->
+      <div class="think-cloud lines-2" style="min-height:54px">
+        你想写哪个字？直接和我说就行～
+      </div>
+      <svg class="mascot mascot-robot" style="" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+      <div class="voice-visual">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+</div>
 </div>
 
-<!-- ====================== [9/24] 学习 1/9 · INTRODUCE 介绍「张」字 ====================== -->
+<!-- ====================== [9/26] 学习 1/9 · INTRODUCE 介绍「张」字 ====================== -->
 <div class="phone">
   <span class="label">⑨ 学习 1/9 · 介绍字（INTRODUCE）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="8" title="回到首页">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10" title="回到首页">‹</div>
       <span class="phase-cap intro"><span class="dot"></span>第 1 步 · 认识它</span>
-      <div class="icon-btn click-toggle-mascot" title="点我听/让我听（原型：切换宠物三态）" style="background:var(--primary-soft-2);color:var(--primary-deep)">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <div class="char-card">
@@ -2074,24 +1787,7 @@
         <div class="speak-bubble" style="left:0;right:auto;bottom:140px;min-width:200px;max-width:240px">
           这是你的姓「张」。跟我读：zhāng～
         </div>
-        <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:0;bottom:0;width:92px;height:116px">
-          <div class="mascot mascot-robot" style="width:92px;height:92px;margin:0">
-  <div class="antenna" style="top:-14px;height:22px"></div>
-  <div class="ear left" style="top:28px;width:11px;height:24px"></div>
-  <div class="ear right" style="top:28px;width:11px;height:24px"></div>
-  <div class="body" style="top:10px;width:72px;height:68px"></div>
-  <div class="face">
-    <div class="eye l" style="top:30px;left:20px;width:13px;height:13px"></div>
-    <div class="eye r" style="top:30px;right:20px;width:13px;height:13px"></div>
-    <div class="blush l" style="top:54px;left:12px;width:16px;height:8px"></div>
-    <div class="blush r" style="top:54px;right:12px;width:16px;height:8px"></div>
-    <div class="mouth" style="top:58px;width:32px;height:14px;border-width:2.5px"></div>
-  </div>
-</div>
-          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-        </div>
+        
       </div>
       <div class="speak" style="margin-top:18px">
         <svg class="ic speaker"><use href="#i-seal"/></svg>
@@ -2102,9 +1798,8 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="11">
+      <button class="btn btn-primary goto-btn btn-md" data-goto="12">
         <span>跟我读 3 遍，下一步</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
       <button class="btn btn-ghost click-toggle-mascot btn-md">
         <svg class="ic-sm"><use href="#i-repeat"/></svg>
@@ -2117,22 +1812,26 @@
       <div class="bubble pet">这是你的姓「张」。跟我读：zhāng～</div>
       <div class="bubble user">zhāng</div>
       <div class="bubble pet">对啦，「张」有 7 画，左边是弓字旁，右边是长。</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:0;bottom:0;width:92px;height:116px">
+          <svg class="mascot mascot-robot" style="width:92px;height:92px;margin:0" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+</div>
 </div>
 
-<!-- ====================== [10/24] 学习 2/9 · EXPLAIN 部件拆解 ====================== -->
+<!-- ====================== [10/26] 学习 2/9 · EXPLAIN 部件拆解 ====================== -->
 <div class="phone">
   <span class="label">⑩ 学习 2/9 · 部件拆解（弓 + 长 = 张）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFFBF0 0%,#F4FBFA 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="9">‹</div>
+      <div class="icon-btn goto-btn" data-goto="11">‹</div>
       <span class="phase-cap explain"><span class="dot"></span>第 2 步 · 拆开看</span>
-      <div class="icon-btn click-toggle-mascot" style="background:#DAECEA;color:#347B74">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:0 0 8px;text-align:center">难写的字<br>先拆成两小半</h2>
@@ -2151,7 +1850,7 @@
 
       <!-- 两个部件卡片并排 -->
       <div class="grid-2" style="margin-top:4px">
-        <div class="card" style="padding:16px 14px;text-align:center;box-shadow:var(--shadow-card)">
+        <div class="card card-sm" style="text-align:center;">
           <div class="cap" style="margin-bottom:8px;color:#3D649E">① 先写 弓 · 3 画</div>
           <div class="mizige" style="--s:140px;box-shadow:inset 0 0 0 2px #C7D6EC">
             <svg viewBox="0 0 100 100">
@@ -2166,7 +1865,7 @@
           <div class="t-3" style="font-size:15px;margin-top:10px">像一张弯弓</div>
           <div class="stroke-dots" style="justify-content:center;display:flex"><span class="g"></span><span class="g"></span><span class="g"></span></div>
         </div>
-        <div class="card" style="padding:16px 14px;text-align:center;box-shadow:var(--shadow-card)">
+        <div class="card card-sm" style="text-align:center;">
           <div class="cap" style="margin-bottom:8px;color:#387448">② 再写 长 · 4 画</div>
           <div class="mizige" style="--s:140px;box-shadow:inset 0 0 0 2px #BBDBC4">
             <svg viewBox="0 0 100 100">
@@ -2192,11 +1891,10 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="12" style="background: #58A79E; box-shadow: 0 4px 0 #347B74;">
+      <button class="btn btn-primary goto-btn btn-md btn-step-teal" data-goto="13">
         <span>先认一认，不着急写</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
-      <button class="btn btn-outline goto-btn btn-md" data-goto="13">
+      <button class="btn btn-outline goto-btn btn-md" data-goto="14">
         <svg class="ic-sm"><use href="#i-pen"/></svg>
         <span>跳过，直接看笔顺</span>
       </button>
@@ -2207,28 +1905,29 @@
       <div class="bubble pet">我们把「张」拆开：左边是「弓」、右边是「长」。分开写就不难啦～</div>
       <div class="bubble user">好的，这样拆开看清楚多了</div>
       <div class="bubble pet">我们先各写 3 遍，再合起来写一遍好不好？</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [11/24] 学习 3/9 · RECOGNIZE 四选一辨字 ====================== -->
+<!-- ====================== [11/26] 学习 3/9 · RECOGNIZE 四选一辨字 ====================== -->
 <div class="phone">
   <span class="label">⑪ 学习 3/9 · 四选一辨认识字</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#F3FAF4 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="10">‹</div>
+      <div class="icon-btn goto-btn" data-goto="12">‹</div>
       <span class="phase-cap recog"><span class="dot"></span>第 3 步 · 认对它</span>
-      <div class="icon-btn click-toggle-mascot" style="background:var(--success-soft);color:#387448">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 6px;text-align:center">听我读的是哪个？</h2>
       <p class="sub" style="text-align:center;margin:0 0 14px">点下面大按钮，先听读的是哪个字</p>
 
-      <button class="card" style="margin:0 auto 18px;display:flex;align-items:center;gap:16px;padding:20px 22px;background:var(--success-soft);border:2.5px solid #BBDBC4;cursor:pointer">
+      <button class="card voice-audio-btn" style="margin:0 auto 18px;display:flex;align-items:center;gap:16px;padding:20px 22px;background:var(--success-soft);border:2.5px solid #BBDBC4;cursor:pointer">
         <div style="width:60px;height:60px;border-radius:18px;background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 60px">
           <svg class="ic-lg"><use href="#i-speak"/></svg>
         </div>
@@ -2250,29 +1949,12 @@
         <div class="speak-bubble" style="left:0;right:auto;bottom:120px;min-width:200px">
           没关系，答错我也会陪着你一起记～
         </div>
-        <div class="mascot-wrap idle click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:92px;height:116px">
-          <div class="mascot mascot-robot" style="width:92px;height:92px;margin:0">
-  <div class="antenna" style="top:-14px;height:22px"></div>
-  <div class="ear left" style="top:28px;width:11px;height:24px"></div>
-  <div class="ear right" style="top:28px;width:11px;height:24px"></div>
-  <div class="body" style="top:10px;width:72px;height:68px"></div>
-  <div class="face">
-    <div class="eye l" style="top:30px;left:20px;width:13px;height:13px"></div>
-    <div class="eye r" style="top:30px;right:20px;width:13px;height:13px"></div>
-    <div class="blush l" style="top:54px;left:12px;width:16px;height:8px"></div>
-    <div class="blush r" style="top:54px;right:12px;width:16px;height:8px"></div>
-    <div class="mouth" style="top:58px;width:32px;height:14px;border-width:2.5px"></div>
-  </div>
-</div>
-          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-        </div>
+        
       </div>
+    </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="13">
+      <button class="btn btn-primary goto-btn btn-md" data-goto="14">
         <span>认对了！下一步</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
 
@@ -2281,22 +1963,26 @@
       <div class="bubble pet">下面 4 个字里，哪一个是我们今天学的「张」呀？</div>
       <div class="bubble user">（点了第二个）</div>
       <div class="bubble pet">答对啦！你真棒！左边「弓」右边「长」，记住了哦～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap idle click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:92px;height:116px">
+          <svg class="mascot mascot-robot" style="width:92px;height:92px;margin:0" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+</div>
 </div>
 
-<!-- ====================== [12/24] 学习 4/9 · DEMONSTRATE 笔顺演示 ====================== -->
+<!-- ====================== [12/26] 学习 4/9 · DEMONSTRATE 笔顺演示 ====================== -->
 <div class="phone">
   <span class="label">⑫ 学习 4/9 · 笔顺演示（7 画逐画高亮）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#F6F9FE 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="11">‹</div>
+      <div class="icon-btn goto-btn" data-goto="13">‹</div>
       <span class="phase-cap demo"><span class="dot"></span>第 4 步 · 看笔顺</span>
-      <div class="icon-btn click-toggle-mascot" style="background:#DCE7F7;color:#3D649E">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 2px;text-align:center">一共 7 笔</h2>
@@ -2342,9 +2028,8 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="14" style="background: #5B86C6; box-shadow: 0 4px 0 #3D649E;">
+      <button class="btn btn-primary goto-btn btn-md btn-step-blue" data-goto="15">
         <span>我看懂了，跟着描一遍</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
       <button class="btn btn-outline btn-md">
         <svg class="ic-sm"><use href="#i-repeat"/></svg>
@@ -2357,22 +2042,23 @@
       <div class="bubble pet">看！一共 7 画：先写 3 画「弓」，再写 4 画「长」。</div>
       <div class="bubble user">嗯，看懂了，我跟着你写</div>
       <div class="bubble pet">写歪一点没关系，我们先顺一遍笔画顺序～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [13/24] 学习 5/9 · GUIDED_TRACE 描摹 ====================== -->
+<!-- ====================== [13/26] 学习 5/9 · GUIDED_TRACE 描摹 ====================== -->
 <div class="phone">
   <span class="label">⑬ 学习 5/9 · 描红描摹（浅灰虚线引导）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFF5F3 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="12">‹</div>
+      <div class="icon-btn goto-btn" data-goto="14">‹</div>
       <span class="phase-cap trace"><span class="dot"></span>第 5 步 · 跟着描</span>
-      <div class="icon-btn click-toggle-mascot" style="background:#F1DBDA;color:#A54B4B">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 6px;text-align:center">顺着淡虚线描</h2>
@@ -2413,9 +2099,8 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="15" style="background: #C76767; box-shadow: 0 4px 0 #A54B4B;">
+      <button class="btn btn-primary goto-btn btn-md btn-step-red" data-goto="16">
         <span>描完了！现在自己写</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
 
@@ -2424,22 +2109,23 @@
       <div class="bubble pet">顺着淡虚线描就好，描不出界、写歪一点都没关系～</div>
       <div class="bubble user">（描完 7 画）</div>
       <div class="bubble pet">描得很好！我们现在不看虚线，自己写一遍吧！</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [14/24] 学习 6/9 · INDEPENDENT_WRITE 独立写 ====================== -->
+<!-- ====================== [14/26] 学习 6/9 · INDEPENDENT_WRITE 独立写 ====================== -->
 <div class="phone">
   <span class="label">⑭ 学习 6/9 · 独立书写（空米字格 + 800ms 停笔识别）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#F8F3FB 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="13">‹</div>
+      <div class="icon-btn goto-btn" data-goto="15">‹</div>
       <span class="phase-cap write"><span class="dot"></span>第 6 步 · 自己写</span>
-      <div class="icon-btn click-toggle-mascot" style="background:#E4D9F0;color:#6F4FA2">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 6px;text-align:center">不用看描线<br>自己写一次试试</h2>
@@ -2472,30 +2158,12 @@
         <div class="think-cloud lines-2" style="right:auto;left:0;bottom:100px;min-width:160px">
           慢慢写不着急～
         </div>
-        <div class="mascot-wrap listening click-toggle-mascot" style="position:absolute;right:4px;bottom:0;width:72px;height:92px">
-          <div class="mascot mascot-robot" style="width:72px;height:72px">
-            <div class="antenna" style="top:-11.0px;height:18.0px"></div>
-              <div class="ear left" style="top:22.0px;width:9.0px;height:19.0px"></div>
-              <div class="ear right" style="top:22.0px;width:9.0px;height:19.0px"></div>
-              <div class="body" style="top:8.0px;width:58.0px;height:54.0px"></div>
-              <div class="face">
-                <div class="eye l" style="top:24.0px;left:16.0px;width:10.0px;height:10.0px"></div>
-                <div class="eye r" style="top:24.0px;right:16.0px;width:10.0px;height:10.0px"></div>
-                <div class="blush l" style="top:43.0px;left:10.0px;width:13.0px;height:6.0px"></div>
-                <div class="blush r" style="top:43.0px;right:10.0px;width:13.0px;height:6.0px"></div>
-                <div class="mouth" style="top:46.0px;width:26.0px;height:11.0px;border-width:2.0px"></div>
-              </div>
-          </div>
-          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:56px;height:20px">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-        </div>
+        
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="16" style="background: #8C6FC7; box-shadow: 0 4px 0 #6F4FA2;">
+      <button class="btn btn-primary goto-btn btn-md btn-step-purple" data-goto="17">
         <span>我写好了！看看对不对</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
       <button class="btn btn-ghost btn-md">
         <svg class="ic-sm"><use href="#i-refresh"/></svg>
@@ -2508,22 +2176,26 @@
       <div class="bubble pet">不看虚线，现在自己在米字格里写一遍「张」字～</div>
       <div class="bubble user">（写完了）</div>
       <div class="bubble pet">我看看～右边「长」写得再舒展一点就更好啦！写得不错！</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap listening click-toggle-mascot" style="position:absolute;right:4px;bottom:0;width:72px;height:92px">
+          <svg class="mascot mascot-robot" style="width:72px;height:72px" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+          <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:56px;height:20px">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+</div>
 </div>
 
-<!-- ====================== [15/24] 学习 7/9 · ASSESS 评估反馈 ====================== -->
+<!-- ====================== [15/26] 学习 7/9 · ASSESS 评估反馈 ====================== -->
 <div class="phone">
   <span class="label">⑮ 学习 7/9 · 评估反馈（三颗朱砂点 + 具体好在哪里）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="14">‹</div>
+      <div class="icon-btn goto-btn" data-goto="16">‹</div>
       <span class="phase-cap assess"><span class="dot"></span>第 7 步 · 写得真好</span>
-      <div class="icon-btn click-toggle-mascot" style="background:#FBE4C7;color:#8F5C1A">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <div class="score-ring">
@@ -2545,7 +2217,7 @@
         <span style="width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#E9C3C3,#D09898);opacity:.7;box-shadow:0 2px 6px rgba(170,60,60,.15)"></span>
       </div>
 
-      <div class="card" style="padding:18px 18px 20px">
+      <div class="card" style="
         <div class="row" style="gap:12px;margin-bottom:14px">
           <div class="ico success"><svg class="ic-lg"><use href="#i-check"/></svg></div>
           <div class="col" style="gap:3px">
@@ -2572,58 +2244,46 @@
         <div class="speak-bubble" style="left:0;right:auto;bottom:100px;min-width:200px;max-width:230px">
           进步好大！这次的弯钩写得特别有力～
         </div>
-        <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:80px;height:100px">
-          <div class="mascot mascot-robot" style="width:80px;height:80px">
-            <div class="antenna" style="top:-12.2px;height:20.0px"></div>
-              <div class="ear left" style="top:24.4px;width:10.0px;height:21.1px"></div>
-              <div class="ear right" style="top:24.4px;width:10.0px;height:21.1px"></div>
-              <div class="body" style="top:8.9px;width:64.4px;height:60.0px"></div>
-              <div class="face">
-                <div class="eye l" style="top:26.7px;left:17.8px;width:11.1px;height:11.1px"></div>
-                <div class="eye r" style="top:26.7px;right:17.8px;width:11.1px;height:11.1px"></div>
-                <div class="blush l" style="top:47.8px;left:11.1px;width:14.4px;height:6.7px"></div>
-                <div class="blush r" style="top:47.8px;right:11.1px;width:14.4px;height:6.7px"></div>
-                <div class="mouth" style="top:51.1px;width:28.9px;height:12.2px;border-width:2.2px"></div>
-              </div>
-          </div>
+        
+      </div>
+    
+    <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:80px;height:100px">
+          <svg class="mascot mascot-robot" style="width:80px;height:80px" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
           <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:64px;height:24px">
             <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </div>
         </div>
-      </div>
-    </div>
+
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="17">
+      <button class="btn btn-primary goto-btn btn-md" data-goto="18">
         <span>好！用它组几个词读读看</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
       <button class="btn btn-ghost goto-btn btn-md" data-goto="15">
         <svg class="ic-sm"><use href="#i-pen"/></svg>
         <span>再写一次练熟</span>
       </button>
     </div>
+  </div>
+    
 
     <!-- A8：Chat Flow 底部对话面板 · 评分反馈 -->
     <div class="chat-flow">
       <div class="bubble pet">写得很好！整体结构 85 分，「长」字那一捺写得特别好看～</div>
       <div class="bubble user">谢谢！我再多练练</div>
       <div class="bubble pet">好！我们现在用「张」组几个词，一起读读看～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
   </div>
 </div>
 
-<!-- ====================== [16/24] 学习 8/9 · SENTENCE 组词造句 ====================== -->
+<!-- ====================== [16/26] 学习 8/9 · SENTENCE 组词造句 ====================== -->
 <div class="phone">
   <span class="label">⑯ 学习 8/9 · 组词造句（点任意卡片可朗读）</span>
   <div class="notch"></div>
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFF4DD 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="15">‹</div>
+      <div class="icon-btn goto-btn" data-goto="17">‹</div>
       <span class="phase-cap intro"><span class="dot" style="background:var(--hong)"></span>第 8 步 · 组个词</span>
-      <div class="icon-btn click-toggle-mascot" style="background:var(--primary-soft-2);color:var(--primary-deep)">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 2px;text-align:center">生活里常听到的</h2>
@@ -2660,7 +2320,7 @@
       </div>
 
       <!-- 句例（大段展示） -->
-      <div class="card" style="padding:20px 18px;margin-top:16px">
+      <div class="card" style="margin-top:16px">
         <div class="row" style="gap:12px;margin-bottom:12px">
           <div class="ico" style="background:#F1DBDA;color:#A54B4B"><svg class="ic-lg"><use href="#i-pet"/></svg></div>
           <div class="col" style="gap:3px">
@@ -2677,9 +2337,8 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="18">
+      <button class="btn btn-primary goto-btn btn-md" data-goto="19">
         <span>「张」字学会啦！下一步</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
       <button class="btn btn-ghost click-toggle-mascot btn-md">
         <svg class="ic-sm"><use href="#i-repeat"/></svg>
@@ -2692,19 +2351,22 @@
       <div class="bubble pet">张老师、姓张、开张、紧张～我们一个一个读！</div>
       <div class="bubble user">张老师、姓张、开张、紧张</div>
       <div class="bubble pet">太棒了！读得清清楚楚！「张」字这一关我们过啦～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [17/24] 学习 9/9 · CHAR_DONE 单字完成 ====================== -->
+<!-- ====================== [17/26] 学习 9/9 · CHAR_DONE 单字完成 ====================== -->
 <div class="phone" id="char-done">
   <span class="label">⑰ 学习 9/9 · 这个字会了！</span>
   <div class="notch"></div>
   <div class="screen">
     <svg class="watermark" style="right:-40px;top:10px;width:180px;height:180px"><use href="#wm-mizige"/></svg>
     <svg class="watermark" style="left:-50px;bottom:60px;width:220px;height:220px"><use href="#wm-mizige"/></svg>
-    <span class="screen-label">单字完成 · 名字 1 / 3 字</span>
 
     <div style="padding:20px 22px 0">
       <div class="done-check">
@@ -2738,7 +2400,7 @@
         </div>
       </div>
 
-      <div class="card" style="padding:18px 16px;margin-top:4px">
+      <div class="card" style="margin-top:4px">
         <div class="between" style="gap:10px;flex-wrap:wrap">
           <div class="row" style="gap:12px">
             <div class="ico warn" style="background:#FBF0D7;color:#896319"><svg class="ic-lg"><use href="#i-clock"/></svg></div>
@@ -2757,37 +2419,19 @@
       <div class="speak-bubble" style="left:0;right:auto;bottom:120px;min-width:210px;max-width:250px">
         第一个字学会了！接下来我们练「建」
       </div>
-      <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:92px;height:116px">
-        <div class="mascot mascot-robot" style="width:92px;height:92px;margin:0">
-  <div class="antenna" style="top:-14px;height:22px"></div>
-  <div class="ear left" style="top:28px;width:11px;height:24px"></div>
-  <div class="ear right" style="top:28px;width:11px;height:24px"></div>
-  <div class="body" style="top:10px;width:72px;height:68px"></div>
-  <div class="face">
-    <div class="eye l" style="top:30px;left:20px;width:13px;height:13px"></div>
-    <div class="eye r" style="top:30px;right:20px;width:13px;height:13px"></div>
-    <div class="blush l" style="top:54px;left:12px;width:16px;height:8px"></div>
-    <div class="blush r" style="top:54px;right:12px;width:16px;height:8px"></div>
-    <div class="mouth" style="top:58px;width:32px;height:14px;border-width:2.5px"></div>
-  </div>
-</div>
-        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
-          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-        </div>
-      </div>
+      
     </div>
 
     <div class="buttons" style="position:absolute;left:0;right:0;bottom:0;padding:16px 22px 34px;background:linear-gradient(180deg,transparent,#FFFBF0 40%)">
-      <button class="btn btn-primary btn-block btn-lg">
+      <button class="btn btn-primary btn-block btn-md goto-btn" data-goto="11">
         <span>接下来学「建」字</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
-      <div class="between" style="margin-top:12px;gap:10px">
-        <button class="btn btn-outline goto-btn btn-md" data-goto="19" style="flex: 1;">
+      <div class="btn-pair" style="margin-top:12px">
+        <button class="btn btn-outline goto-btn btn-md" data-goto="20">
           <svg class="ic-sm"><use href="#i-repeat"/></svg>
           <span>先复习一下</span>
         </button>
-        <button class="btn btn-ghost goto-btn btn-md" data-goto="9" style="flex: 1;">
+        <button class="btn btn-ghost goto-btn btn-md" data-goto="10">
           <svg class="ic-sm"><use href="#i-home"/></svg>
           <span>回首页</span>
         </button>
@@ -2799,18 +2443,25 @@
       <div class="bubble pet">恭喜！「张」字我们学会啦！从读音到写，你都写得特别好！</div>
       <div class="bubble user">谢谢你！我很高兴</div>
       <div class="bubble pet">我们继续努力，下一个字学「建」，或者先复习一下今天的？</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap speaking click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:92px;height:116px">
+        <svg class="mascot mascot-robot" style="width:92px;height:92px;margin:0" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:72px;height:28px">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+</div>
 </div>
 
-<!-- ====================== [18/24] 复习 1/3 · FLIP_CARD 翻卡闪卡 ====================== -->
+<!-- ====================== [18/26] 复习 1/3 · FLIP_CARD 翻卡闪卡 ====================== -->
 <div class="phone">
   <span class="label">⑱ 复习 1/3 · 翻卡闪卡（点卡片翻面）</span>
   <div class="notch"></div>
   <div class="screen" id="review" style="background:linear-gradient(180deg,#F3FAF4 0%,#FFF4DD 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="17">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1" style="font-size:22px;margin:0">翻一翻</h1>
       <span class="chip outline">3 / 5</span>
     </div>
@@ -2843,19 +2494,7 @@
             <div class="sub" style="color:var(--ink-2);font-size:15px;line-height:1.7;text-align:center;max-width:200px;margin:0 auto">
               ① 人的姓<br>② 打开、伸开
             </div>
-            <div class="mascot mascot-robot" style="position:absolute;bottom:20px;right:20px;width:54px;height:54px;opacity:.9">
-              <div class="antenna" style="top:-8.2px;height:13.5px"></div>
-                <div class="ear left" style="top:16.5px;width:6.8px;height:14.2px"></div>
-                <div class="ear right" style="top:16.5px;width:6.8px;height:14.2px"></div>
-                <div class="body" style="top:6.0px;width:43.5px;height:40.5px"></div>
-                <div class="face">
-                  <div class="eye l" style="top:18.0px;left:12.0px;width:7.5px;height:7.5px"></div>
-                  <div class="eye r" style="top:18.0px;right:12.0px;width:7.5px;height:7.5px"></div>
-                  <div class="blush l" style="top:32.2px;left:7.5px;width:9.8px;height:4.5px"></div>
-                  <div class="blush r" style="top:32.2px;right:7.5px;width:9.8px;height:4.5px"></div>
-                  <div class="mouth" style="top:34.5px;width:19.5px;height:8.2px;border-width:1.5px"></div>
-                </div>
-            </div>
+            <svg class="mascot mascot-robot" style="position:absolute;bottom:20px;right:20px;width:54px;height:54px;opacity:.9" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
           </div>
         </div>
       </div>
@@ -2875,7 +2514,7 @@
           <svg class="ic-sm"><use href="#i-bin"/></svg>
           <span>没记住</span>
         </button>
-        <button class="btn btn-primary flip-mark goto-btn btn-md" data-goto="20" data-mark="right" style="flex: 1;">
+        <button class="btn btn-primary flip-mark goto-btn btn-md" data-goto="21" data-mark="right">
           <svg class="ic-sm" style="color:#fff"><use href="#i-check"/></svg>
           <span>记得</span>
         </button>
@@ -2886,19 +2525,23 @@
         <div class="bubble pet">翻卡片啦！这是哪个字呀？</div>
         <div class="bubble user">「张」！我记住了</div>
         <div class="bubble pet">对啦！真棒！点「记得」过下一张吧～</div>
-        <div class="mic-hint">长按宠物 · 语音操作</div>
+        <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
       </div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [19/24] 复习 2/3 · CONSOLIDATE 场景巩固练习 ====================== -->
+<!-- ====================== [19/26] 复习 2/3 · CONSOLIDATE 场景巩固练习 ====================== -->
 <div class="phone">
   <span class="label">⑲ 复习 2/3 · 场景小题巩固</span>
   <div class="notch"></div>
   <div class="screen" id="review" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="18">‹</div>
+      <div class="icon-btn goto-btn" data-goto="20">‹</div>
       <h1 class="t-1" style="font-size:22px;margin:0">在生活里认</h1>
       <span class="chip outline">2 / 3</span>
     </div>
@@ -2947,9 +2590,8 @@
       </div>
     </div>
     <div class="bottom-bar">
-      <button class="btn btn-primary goto-btn btn-md" data-goto="21">
+      <button class="btn btn-primary goto-btn btn-md" data-goto="22">
         <span>做完了！今天就学这么多</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
     </div>
 
@@ -2958,19 +2600,22 @@
       <div class="bubble pet">我们来看两句话，把你姓「张」的那个字找出来好不好？</div>
       <div class="bubble user">好！我试试</div>
       <div class="bubble pet">慢慢来，点错了没关系，多看看就熟啦～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [20/24] 复习 3/3 · SESSION_WRAPUP 本次总结 ====================== -->
+<!-- ====================== [20/26] 复习 3/3 · SESSION_WRAPUP 本次总结 ====================== -->
 <div class="phone">
   <span class="label">⑳ 收尾总结 · 本次学习 + 朱砂大印</span>
   <div class="notch"></div>
   <div class="screen" id="wrapup">
     <svg class="watermark" style="right:-40px;top:10px;width:180px;height:180px;opacity:.035"><use href="#wm-mizige"/></svg>
     <svg class="watermark" style="left:-50px;bottom:60px;width:220px;height:220px;opacity:.035"><use href="#wm-mizige"/></svg>
-    <span class="screen-label">本次完成 · 明天继续</span>
 
     <div style="padding:10px 22px 0">
       <div class="trophy">今日</div>
@@ -2986,7 +2631,7 @@
       <div class="big-seal">今日<br>学成</div>
 
       <!-- 下次预告 -->
-      <div class="card" style="padding:16px 16px 18px;margin-top:2px">
+      <div class="card" style="margin-top:2px">
         <div class="between" style="gap:10px;flex-wrap:wrap">
           <div class="row" style="gap:12px">
             <div class="ico" style="background:#E4D9F0;color:#6F4FA2"><svg class="ic-lg"><use href="#i-path"/></svg></div>
@@ -3008,32 +2653,14 @@
       <div class="speak-bubble" style="left:0;right:auto;bottom:100px;min-width:210px;max-width:250px">
         今天辛苦了！明天我等你一起写字哦～
       </div>
-      <div class="mascot-wrap idle click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:90px;height:110px">
-        <div class="mascot mascot-robot" style="width:88px;height:88px;margin:0">
-  <div class="antenna" style="top:-13px;height:22px"></div>
-  <div class="ear left" style="top:26px;width:11px;height:24px"></div>
-  <div class="ear right" style="top:26px;width:11px;height:24px"></div>
-  <div class="body" style="top:9px;width:64px;height:64px"></div>
-  <div class="face">
-    <div class="eye l" style="top:28px;left:18px;width:13px;height:13px"></div>
-    <div class="eye r" style="top:28px;right:18px;width:13px;height:13px"></div>
-    <div class="blush l" style="top:51px;left:11px;width:16px;height:8px"></div>
-    <div class="blush r" style="top:51px;right:11px;width:16px;height:8px"></div>
-    <div class="mouth" style="top:54px;width:30px;height:13px;border-width:2.5px"></div>
-  </div>
-</div>
-        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:64px;height:26px">
-          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-        </div>
-      </div>
+      
     </div>
 
     <div class="buttons" style="position:absolute;left:0;right:0;bottom:0;padding:16px 22px 34px;background:linear-gradient(180deg,transparent,#F3FAF4 40%)">
-      <button class="btn btn-primary goto-btn btn-block btn-lg" data-goto="9">
+      <button class="btn btn-primary goto-btn btn-block btn-md" data-goto="10">
         <span>好的，明天再来！</span>
-        <svg class="ic" style="color:#fff"><use href="#i-speak"/></svg>
       </button>
-      <button class="btn btn-outline goto-btn btn-md btn-block" data-goto="22" style="margin-top: 12px;">
+      <button class="btn btn-outline goto-btn btn-md btn-block" data-goto="23" style="margin-top: 12px;">
         <svg class="ic-sm"><use href="#i-sign"/></svg>
         <span>看看我的名字还剩多少</span>
       </button>
@@ -3044,22 +2671,26 @@
       <div class="bubble pet">今天我们学了 3 个字、写了 9 次，你真的很棒！</div>
       <div class="bubble user">我觉得我写得比昨天好多了</div>
       <div class="bubble pet">是呀！我们明天继续，一起加油把剩下的学完好不好～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
-  </div>
+  
+    <div class="mascot-wrap idle click-toggle-mascot" style="position:absolute;right:10px;bottom:0;width:90px;height:110px">
+        <svg class="mascot mascot-robot" style="width:88px;height:88px;margin:0" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
+        <div class="voice-visual" style="bottom:-4px;left:50%;transform:translateX(-50%);width:64px;height:26px">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+</div>
 </div>
 
-<!-- ====================== [21/24] 辅助 1/4 · NAME_PROGRESS 姓名进度详情 ====================== -->
+<!-- ====================== [21/26] 辅助 1/4 · NAME_PROGRESS 姓名进度详情 ====================== -->
 <div class="phone">
   <span class="label">㉑ 姓名学习进度详情</span>
   <div class="notch"></div>
   <div class="screen" id="name-progress" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="8">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1" style="font-size:22px;margin:0">写名字</h1>
-      <div class="icon-btn click-toggle-mascot" title="直接说话操作" style="background:var(--primary-soft-2);color:var(--primary-deep)">
-        <svg class="ic-sm"><use href="#i-speak"/></svg>
-      </div>
     </div>
     <div class="content">
       <div class="progress" style="margin-bottom:16px"><i style="width:34%"></i></div>
@@ -3106,9 +2737,8 @@
             <i style="background:var(--warn-soft);color:#896319">聿 · 练 1 次</i>
             <i>拼整字</i>
           </div>
-          <button class="btn btn-primary goto-btn btn-sm" data-goto="10" style="margin-top: 6px; align-self: flex-start;">
+          <button class="btn btn-primary goto-btn btn-sm" data-goto="11" style="margin-top: 6px; align-self: flex-start;">
             <span>继续练「建」</span>
-            <svg class="ic-sm" style="color:#fff"><use href="#i-speak"/></svg>
           </button>
         </div>
       </div>
@@ -3139,18 +2769,22 @@
       <div class="bubble pet">你的全名一共 3 个字，「张」学会啦！还有 2 个字慢慢学～</div>
       <div class="bubble user">好的，我慢慢学，不着急</div>
       <div class="bubble pet">嗯！我们一个一个来，慢慢写，记住就可以啦</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [22/24] 辅助 2/4 · PACK_SELECT 字包选择（简笔图标代替文字） ====================== -->
+<!-- ====================== [22/26] 辅助 2/4 · PACK_SELECT 字包选择（简笔图标代替文字） ====================== -->
 <div class="phone">
   <span class="label">㉒ 字包选择（看图选常用场景）</span>
   <div class="notch"></div>
   <div class="screen" id="packs" style="background:linear-gradient(180deg,#FFF8EC 0%,#FFFBF0 100%)">
     <div class="topbar between">
-      <div class="icon-btn goto-btn" data-goto="8">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1" style="font-size:22px;margin:0">想学哪些字</h1>
       <span class="chip success">已选 2 组</span>
     </div>
@@ -3239,18 +2873,22 @@
       <div class="bubble pet">你想先学哪类字呀？跟我说就好，或者点卡片也行～</div>
       <div class="bubble user">先学家里的字和出门坐车的字吧</div>
       <div class="bubble pet">好的！先学这 2 组，学熟了再加新的，慢慢来～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [23/24] 辅助 3/4 · SETTINGS 设置（重构：去掉一字竖排 + 字号三档规划 + 预览联动） ====================== -->
+<!-- ====================== [23/26] 辅助 3/4 · SETTINGS 设置（重构：去掉一字竖排 + 字号三档规划 + 预览联动） ====================== -->
 <div class="phone">
   <span class="label">㉓ 设置页（大图标·字号三档·适老化）</span>
   <div class="notch"></div>
   <div class="screen" id="settings" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF8EC 100%)">
     <div class="topbar">
-      <div class="icon-btn goto-btn" data-goto="8">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1">设置</h1>
       <div style="width:44px"></div>
     </div>
@@ -3286,7 +2924,6 @@
           <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-primary fs-preview-btn btn-md" style="height: 46px;">
               <span>继续练习</span>
-              <svg class="ic-sm" style="color:#fff"><use href="#i-speak"/></svg>
             </button>
             <button class="btn btn-outline fs-preview-btn btn-md" style="background: #fff; border: 1.5px solid var(--primary-soft); color: var(--primary-deep); height: 46px;">
               <span>先复习这 3 个</span>
@@ -3332,7 +2969,7 @@
       </div>
 
       <div class="divider-label">线上老师</div>
-      <div class="item goto-btn" data-goto="3" style="cursor:pointer">
+      <div class="item goto-btn" data-goto="4" style="cursor:pointer">
         <div class="l">
           <div class="ico" style="width:52px;height:52px;border-radius:14px;background:#DCE7F7;color:#3D649E;display:flex;align-items:center;justify-content:center;flex:0 0 52px">
             <svg class="ic-lg"><use href="#i-ai"/></svg>
@@ -3363,22 +3000,10 @@
       </div>
 
       <div class="divider-label">小伙伴</div>
-      <div class="item goto-btn" data-goto="5" style="cursor:pointer">
+      <div class="item goto-btn" data-goto="6" style="cursor:pointer">
         <div class="l">
           <div style="width:52px;height:52px;border-radius:50%;position:relative;flex:0 0 52px">
-            <div class="mascot mascot-robot" style="width:52px;height:52px">
-              <div class="antenna" style="top:-7.9px;height:13.0px"></div>
-                <div class="ear left" style="top:15.9px;width:6.5px;height:13.7px"></div>
-                <div class="ear right" style="top:15.9px;width:6.5px;height:13.7px"></div>
-                <div class="body" style="top:5.8px;width:41.9px;height:39.0px"></div>
-                <div class="face">
-                  <div class="eye l" style="top:17.3px;left:11.6px;width:7.2px;height:7.2px"></div>
-                  <div class="eye r" style="top:17.3px;right:11.6px;width:7.2px;height:7.2px"></div>
-                  <div class="blush l" style="top:31.1px;left:7.2px;width:9.4px;height:4.3px"></div>
-                  <div class="blush r" style="top:31.1px;right:7.2px;width:9.4px;height:4.3px"></div>
-                  <div class="mouth" style="top:33.2px;width:18.8px;height:7.9px;border-width:1.4px"></div>
-                </div>
-            </div>
+            <svg class="mascot mascot-robot" style="width:52px;height:52px" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
           </div>
           <div class="col" style="gap:3px">
             <h4>换个小伙伴</h4>
@@ -3401,7 +3026,7 @@
         </div>
         <svg class="ic" style="color:#9A3E3E"><use href="#i-chevron"/></svg>
       </div>
-      <div class="item goto-btn" data-goto="25" style="cursor:pointer">
+      <div class="item goto-btn" data-goto="26" style="cursor:pointer">
         <div class="l">
           <div class="ico" style="width:52px;height:52px;border-radius:14px;background:#DCE7F7;color:#3D649E;display:flex;align-items:center;justify-content:center;flex:0 0 52px">
             <svg class="ic-lg"><use href="#i-lock"/></svg>
@@ -3420,12 +3045,16 @@
       <div class="bubble pet">这里可以调字大小、换小伙伴、清记录。需要改什么直接跟我说～</div>
       <div class="bubble user">帮我把字调大一点，我眼睛有点花</div>
       <div class="bubble pet">好的！现在调到「大」字号啦，再看看够不够？</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
+    </div>
+  
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
   </div>
 </div>
 
-<!-- ====================== [25/25] 辅助 4/4 · ABOUT 关于页 ====================== -->
+<!-- ====================== [25/26] 辅助 4/4 · ABOUT 关于页 ====================== -->
 <div class="phone">
   <span class="label">㉕ 关于与第三方声明</span>
   <div class="notch"></div>
@@ -3434,7 +3063,7 @@
     <svg class="watermark" style="left:-50px;bottom:80px;width:220px;height:220px;opacity:.04"><use href="#wm-mizige"/></svg>
 
     <div class="topbar" style="padding:6px 20px 12px;display:flex;align-items:center;gap:14px">
-      <div class="icon-btn goto-btn" data-goto="8">‹</div>
+      <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1" style="font-size:24px;margin:0">关于</h1>
     </div>
     <div class="content" style="padding:14px 20px 180px">
@@ -3464,7 +3093,7 @@
         </div>
       </div>
 
-      <div class="card" style="padding:18px 18px 20px">
+      <div class="card" style="
         <div class="between" style="margin-bottom:14px">
           <div class="t-3" style="font-size:17px">版本信息</div>
           <span class="chip outline">v1.0.0</span>
@@ -3486,7 +3115,7 @@
         </div>
       </div>
 
-      <div class="card" style="padding:18px 18px 20px;margin-top:16px">
+      <div class="card" style="margin-top:16px">
         <div class="row" style="gap:12px;margin-bottom:14px">
           <div class="ico" style="background:#DCE7F7;color:#3D649E"><svg class="ic-lg"><use href="#i-doc"/></svg></div>
           <div class="col" style="gap:3px">
@@ -3511,14 +3140,18 @@
       <div style="text-align:center;margin:24px 0 0;color:var(--ink-3);font-size:12px;letter-spacing:1px;font-weight:700">
         © 2025 · 家人代为配置 · 祝所有长辈学字顺利
       </div>
+    
+    <div class="mascot-wrap idle">
+      <svg class="mascot mascot-robot" viewBox="0 0 100 100"><use href="#pet-robot"/></svg>
     </div>
+  </div>
 
     <!-- A8：Chat Flow 底部对话面板 · 关于页 -->
     <div class="chat-flow">
       <div class="bubble pet">这是关于页，所有数据都在你自己手机里，不会上传哦。</div>
       <div class="bubble user">语音也是离线的吗？</div>
       <div class="bubble pet">对！语音合成、识别都在本机跑，完全不用网～</div>
-      <div class="mic-hint">长按宠物 · 语音操作</div>
+      <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
   </div>
 </div>
@@ -3529,16 +3162,60 @@
   const phones = Array.from(document.querySelectorAll('.phone'));
   const TOTAL = phones.length;
   let currentIdx = 0;
-  let singleMode = false;
 
   phones.forEach((p,i)=>p.dataset.screen = i+1);
 
-  // 顶部工具栏
-  const modeSwitch = document.getElementById('modeSwitch');
-  const modeLabel  = document.getElementById('modeLabel');
+  // 顶部工具栏：默认单页模式（26 屏逐个查看），下拉框选屏 + 上一页/下一页
   const pagText    = document.getElementById('pagText');
   const prevBtn    = document.getElementById('prevBtn');
   const nextBtn    = document.getElementById('nextBtn');
+  const screenSelect = document.getElementById('screenSelect');
+  const designNote = document.getElementById('designNote');
+  document.body.classList.add('single-mode');
+  let singleMode = true;
+
+  // 26 屏设计说明（记录在 HTML 内，单页查看时显示在当前屏下方；含交互处理逻辑）
+  // 通用交互（屏 6+ 语音化后生效）：
+  // ① 底部按钮隐藏，宠物+说话框+声波条常驻左下角；对话整合到宠物说话框（打字机循环）；说明文字点击=点读朗读
+  // ② 流程推进由宠物 agent 自动判断：完成一步/停顿时主动询问（「要继续吗/要返回吗/想休息吗」），用户语音回复控制——不依赖按钮
+  // ③ 未被宠物替换的按钮（屏2-5 家人设置、屏15/16 书写工具、屏25 设置页）为家人/功能操作，识字可读，不面向不识字的老人操作
+  const NOTES = {
+    1:'启动页：品牌展示 + 加载态（「正在加载语音老师…」加载点）。设计稿停留展示、不自动跳转（自动跳转是实际 App 加载完成后的逻辑）；查看时用顶部下拉框/下一页手动切换。',
+    2:'协议确认（合规）：家人代为阅读《用户服务协议》《隐私说明》并双勾选，才解锁「下一步」（未勾选按钮为浅橙禁用态，提示先勾选）；「不同意，暂不使用」退出。此屏为家人辅助操作（识字可读），按钮无喇叭图标（避免与语音混淆/误触）。',
+    3:'引导 1/8 下载语音包（❌不可跳过）：下载进度可见，支持暂停/继续（暂停仅停下载，无「稍后再下」跳过出口）；下载失败提示重试；下完自动解锁「下载完成·继续」。语音是主通道，没有语音老师无法使用。',
+    4:'引导 2/8 配置 AI 老师（❌不可跳过）：家人协助填服务商/Key/模型，仅「配置好了·继续」一个出口；AI 评估是核心功能，缺了不完整。',
+    5:'引导 3/8 语音就绪：语音包已装完，本机离线可用；从这里进入全语音模式（voice-ready：底部按钮隐藏，宠物+说话框接管；后续流程推进由宠物 agent 自动询问「继续/返回」）。',
+    6:'引导 4/8 选宠物（❌必选）：说「第几个」或点卡片（点卡片=选好自动进入下一步）；默认机器人；宠物是全局语音交互角色。',
+    7:'引导 5/8 姓名（✅可跳过）：说「我叫XX」或家人输入；「对，就是这个」确认（btn-pair 保留给家人）；跳过可随时说「建档」补录。',
+    8:'引导 6/8 名字学习计划：逐字拆解部件 + 环形进度展示。',
+    9:'引导 7/8 学习方式说明：教控制词（提示一下/再读一遍/休息一下/不学了），说「开始」进学习。',
+    10:'首页：极简卡片导航，直接说「学我的名字/想学一个字/复习」操作；宠物自动待机-倾听-说话（voice 循环）；卡片描述文字点击=点读。',
+    11:'学习 1/9 介绍字（INTRODUCE）：认识读音与字形；教学语自动朗读；读完后宠物 agent 主动询问「要不要继续」，说「继续/下一步」进入下一阶段。',
+    12:'学习 2/9 部件拆解（EXPLAIN）：难字拆成小部件先练熟；可语音「跳过，直接看笔顺」。',
+    13:'学习 3/9 四选一辨字（RECOGNIZE）：听读音选对应汉字（点卡片=选择，答对绿/答错红，可反复）；「点这里听我读」语音化后自动隐藏。',
+    14:'学习 4/9 笔顺演示（DEMONSTRATE）：笔画逐画高亮；点笔顺圆点切换演示当前笔。',
+    15:'学习 5/9 描红（GUIDED_TRACE）：顺浅灰虚线描；书写工具条（擦掉重来/硬笔粗细/看一眼原字）为功能操作保留——是写字必备工具而非导航，识字可辨图标，且与宠物语音无冲突。',
+    16:'学习 6/9 独立写（INDEPENDENT_WRITE）：空米字格自己写，停笔 800ms 自动识别。',
+    17:'学习 7/9 评估（ASSESS）：三颗朱砂点评级 + 具体反馈（笔顺/结构/下次注意）。',
+    18:'学习 8/9 组词造句（SENTENCE）：点卡片朗读，生活常用词。',
+    19:'学习 9/9 单字完成（CHAR_DONE）：名字进度更新；说「接下来学X」继续。',
+    20:'复习 1/3 翻卡（FLIP_CARD）：点卡片翻面看释义；说「记得/没记住」作答。',
+    21:'复习 2/3 场景巩固（CONSOLIDATE）：生活场景小题，点选项作答。',
+    22:'复习 3/3 本次总结（WRAPUP）：学成印章 + 明天预告；说「明天再来」回首页。',
+    23:'姓名进度详情：逐字进度 + 部件拆解状态。',
+    24:'字包选择：按生活场景选字组（家里/出门/买东西…），语音或点卡片切换。',
+    25:'设置页（家人配置）：字号三档（标准/大/超大，预览实时联动）、声音大小/语速、AI 老师、换宠物、清记录；家人操作按钮保留。',
+    26:'关于与第三方声明：版本 + 隐私 + 开源许可。'
+  };
+
+  // 下拉框选项
+  phones.forEach((p,i)=>{
+    const lbl = (p.querySelector('.label')?.textContent || '').replace(/^[⓪-㉕]\s*/, '').trim() || ('屏 '+(i+1));
+    const opt = document.createElement('option');
+    opt.value = i+1;
+    opt.textContent = '屏 ' + (i+1) + ' · ' + lbl;
+    screenSelect.appendChild(opt);
+  });
 
   function setActive(i){
     currentIdx = Math.max(0, Math.min(TOTAL-1, i));
@@ -3546,48 +3223,117 @@
     pagText.textContent = '屏 ' + (currentIdx+1) + ' / ' + TOTAL;
     prevBtn.disabled = currentIdx === 0;
     nextBtn.disabled = currentIdx === TOTAL-1;
-    if(singleMode){
-      phones[currentIdx].scrollIntoView({behavior:'smooth', block:'center', inline:'center'});
-    }
+    screenSelect.value = currentIdx + 1;
+    // 语音化状态自动管理：屏 6+（选宠及之后）全语音模式（按钮隐藏、宠物+对话接管）；屏 2-5 家人设置阶段保留按钮
+    if(currentIdx + 1 >= 6){ document.body.classList.add('voice-ready'); }
+    else{ document.body.classList.remove('voice-ready'); }
+    // 设计说明面板：移到当前屏下方并更新内容
+    designNote.innerHTML = '<b>屏 ' + (currentIdx+1) + ' · 设计说明：</b>' + (NOTES[currentIdx+1] || '');
+    phones[currentIdx].after(designNote);
+    phones[currentIdx].scrollIntoView({behavior:'smooth', block:'center', inline:'center'});
   }
 
-  function flashPhone(i){
-    const p = phones[i];
-    if(!p) return;
-    p.classList.remove('flash');
-    void p.offsetWidth;
-    p.classList.add('flash');
-    if(!singleMode){
-      p.scrollIntoView({behavior:'smooth', block:'center', inline:'nearest'});
-    }
-  }
-
-  modeSwitch.addEventListener('click', ()=>{
-    singleMode = !singleMode;
-    document.body.classList.toggle('single-mode', singleMode);
-    modeSwitch.classList.toggle('on', singleMode);
-    modeLabel.textContent = singleMode
-      ? '单页模式 · 按流程走 · 点切回总览对照'
-      : '总览模式 · 对照 26 屏看 · 点此切单页走流程';
-    setActive(currentIdx);
-  });
-
+  screenSelect.addEventListener('change', ()=>setActive(parseInt(screenSelect.value,10)-1));
   prevBtn.addEventListener('click', ()=>setActive(currentIdx-1));
   nextBtn.addEventListener('click', ()=>setActive(currentIdx+1));
 
-  // 跳转按钮（带 data-goto="N"）：单页模式直接切，总览模式滚动+闪黄框
+  // 跳转按钮
   document.addEventListener('click', e=>{
     const btn = e.target.closest('.goto-btn');
     if(!btn) return;
     const n = parseInt(btn.dataset.goto, 10);
     if(!isNaN(n) && n>=1 && n<=TOTAL){
-      if(singleMode){
-        setActive(n-1);
-      }else{
-        flashPhone(n-1);
+      if(n >= 6) document.body.classList.add('voice-ready');
+      setActive(n-1);
+    }
+  });
+
+  // 语音对话模拟：voice-ready 后，宠物说话框按该屏对话序列自动循环（打字机）
+  const VOICE_SCRIPTS = {};
+  phones.forEach((ph,i)=>{
+    const bubbles = ph.querySelectorAll('.chat-flow .bubble');
+    if(bubbles.length){
+      VOICE_SCRIPTS[i+1] = Array.from(bubbles).map(b=>({pet: b.classList.contains('pet'), text: b.textContent.trim()}));
+    }else{
+      const talks = ph.querySelectorAll('.mascot-wrap .speak-bubble, .mascot-wrap .think-cloud');
+      if(talks.length){
+        VOICE_SCRIPTS[i+1] = Array.from(talks).map(t=>({pet: true, text: t.textContent.trim()}));
       }
     }
   });
+  let voiceCtx = null;
+  function typeText(el, full, speed){
+    el.textContent = '';
+    if(el._t) clearInterval(el._t);
+    let ci = 0;
+    el._t = setInterval(()=>{
+      el.textContent = full.slice(0, ++ci);
+      if(ci >= full.length) clearInterval(el._t);
+    }, speed);
+  }
+  function getTalkBox(wrap){
+    let box = wrap.querySelector('.speak-bubble');
+    if(!box){
+      box = wrap.querySelector('.think-cloud');
+      if(box) box.classList.remove('lines-2');
+    }
+    if(!box){
+      box = document.createElement('div');
+      box.className = 'speak-bubble';
+      box.style.minWidth = '120px';
+      wrap.appendChild(box);
+    }
+    return box;
+  }
+  setInterval(()=>{
+    if(!document.body.classList.contains('voice-ready')) return;
+    const n = currentIdx + 1;
+    const script = VOICE_SCRIPTS[n];
+    if(!script || !script.length) return;
+    if(!voiceCtx || voiceCtx.screen !== n) voiceCtx = {screen: n, idx: 0};
+    const item = script[voiceCtx.idx % script.length];
+    voiceCtx.idx++;
+    const wrap = [...phones[currentIdx].querySelectorAll('.mascot-wrap')].filter(w=>!w.classList.contains('static-mascot'))[0];
+    if(!wrap) return;
+    const box = getTalkBox(wrap);
+    ['idle','listening','speaking'].forEach(s=>wrap.classList.remove(s));
+    wrap.classList.add(item.pet ? 'speaking' : 'listening');
+    box.style.display = '';
+    typeText(box, (item.pet ? '🤖 ' : '🎤 ') + item.text, 42);
+  }, 2800);
+
+  // 声音波动条：voice-ready 时注入到每个悬浮宠物旁（正在监听的反馈）
+  document.querySelectorAll('.mascot-wrap').forEach(w=>{
+    if(w.classList.contains('static-mascot')) return;
+    if(!w.querySelector('.flow-vv')){
+      const vv = document.createElement('div');
+      vv.className = 'flow-vv';
+      for(let k=0;k<7;k++) vv.appendChild(document.createElement('i'));
+      w.appendChild(vv);
+    }
+  });
+
+  // 点读：说明性文字点击 → 高亮 + 宠物说话框朗读该内容（按钮类不点读，避免误触）
+  document.addEventListener('click', e=>{
+    if(!document.body.classList.contains('voice-ready')) return;
+    const t = e.target;
+    if(t.closest('button,a,select,input,.goto-btn,.pet-card,.recognize-opt,.flip-card-click,.check,.switch,.seg,.click-slider,.pack-toggle,.icon-btn,.chat-flow,.mascot-wrap,.stroke-index,.chip,.fs-btn')) return;
+    const el = t.closest('p,h1,h2,h3,h4,.sub,.cap,.t-1,.t-2,.t-3,.card,.speak,.char-row,.sentence-card,.opt-card,.phase-cap,.form,.agree-card');
+    if(!el) return;
+    const txt = el.textContent.trim().replace(/\s+/g,' ');
+    if(!txt || txt.length > 60) return;
+    el.classList.add('reading');
+    setTimeout(()=>el.classList.remove('reading'), 1600);
+    const wrap = [...phones[currentIdx].querySelectorAll('.mascot-wrap')].filter(w=>!w.classList.contains('static-mascot'))[0];
+    if(wrap){
+      const box = getTalkBox(wrap);
+      ['idle','listening','speaking'].forEach(s=>wrap.classList.remove(s));
+      wrap.classList.add('speaking');
+      box.style.display = '';
+      typeText(box, '📖 ' + txt, 38);
+    }
+  });
+
   // 所有带 data-goto 的元素（不仅仅是 goto-btn）
   document.querySelectorAll('[data-goto]').forEach(el=>{
     if(!el.classList.contains('goto-btn')) el.classList.add('goto-btn');
@@ -3602,17 +3348,10 @@
     const bothOn = chk1 && chk2 && !chk1.classList.contains('off') && !chk2.classList.contains('off');
     if(bothOn){
       agreeSubmit.disabled = false;
-      agreeSubmit.style.opacity = '1';
-      agreeSubmit.style.cursor = 'pointer';
-      agreeSubmit.style.filter = 'none';
-      agreeSubmit.style.boxShadow = 'var(--shadow-btn)';
     }else{
       agreeSubmit.disabled = true;
-      agreeSubmit.style.opacity = '.55';
-      agreeSubmit.style.cursor = 'not-allowed';
-      agreeSubmit.style.filter = 'grayscale(.25)';
-      agreeSubmit.style.boxShadow = 'none';
     }
+    // 两种状态的视觉统一由 CSS 处理（.btn-primary:disabled 与普通主按钮完全一致）
   }
   document.querySelectorAll('.check').forEach(chk=>{
     chk.addEventListener('click', e=>{
@@ -3627,94 +3366,60 @@
   });
   refreshAgreeBtn();
 
+  // ── 语音包下载：暂停/继续（语音包不可跳过，无「稍后再下」出口；下完才解锁下一步） ──
+  const dlToggle = document.getElementById('dlToggle');
+  const dlDone = document.getElementById('dlDone');
+  if(dlToggle){
+    const dlBar = document.getElementById('dlBar');
+    const dlPct = document.getElementById('dlPct');
+    const dlMB = document.getElementById('dlMB');
+    const dlTime = document.getElementById('dlTime');
+    const dlState = document.getElementById('dlState');
+    const dlToggleText = document.getElementById('dlToggleText');
+    const MB_TOTAL = 168;
+    let dlPctVal = 42;
+    let dlTimer = null;
+    function paintDownload(){
+      if(dlBar) dlBar.querySelector('i').style.width = dlPctVal + '%';
+      if(dlPct) dlPct.textContent = dlPctVal + '%';
+      if(dlMB) dlMB.textContent = (MB_TOTAL*dlPctVal/100).toFixed(1) + ' MB / ' + MB_TOTAL + ' MB';
+      if(dlPctVal >= 100){
+        clearInterval(dlTimer);
+        if(dlState){ dlState.textContent = '语音包下载完成 · 本机离线可用'; dlState.style.color = '#387448'; }
+        if(dlTime) dlTime.textContent = '下载完成，以后打开直接用';
+        if(dlToggle) dlToggle.style.display = 'none';
+        if(dlDone) dlDone.style.display = '';
+      }
+    }
+    dlToggle.addEventListener('click', ()=>{
+      if(dlTimer){
+        clearInterval(dlTimer); dlTimer = null;
+        if(dlToggleText) dlToggleText.textContent = '继续下载';
+        if(dlState){ dlState.textContent = '已暂停 · 点「继续下载」接着下'; dlState.style.color = 'var(--warn)'; }
+      }else{
+        dlTimer = setInterval(()=>{ dlPctVal = Math.min(100, dlPctVal + 2); paintDownload(); }, 90);
+        if(dlToggleText) dlToggleText.textContent = '暂停下载';
+        if(dlState){ dlState.textContent = '正在下载，请保持网络连接'; dlState.style.color = ''; }
+      }
+    });
+    dlTimer = setInterval(()=>{ dlPctVal = Math.min(100, dlPctVal + 2); paintDownload(); }, 90);
+    paintDownload();
+  }
+
   // ── 选宠物（屏4）：点卡片切 on，按钮同步更新文字，右下预览宠物同步换造型（4套完全独立结构） ──
   const PET_NAMES = {octopus:'小章鱼', robot:'机器人', dino:'小恐龙', mochi:'小团子'};
   const PET_TEMPLATES = {
-    octopus: `<div class="tentacle tl"></div><div class="tentacle tr"></div>
-<div class="tentacle l"></div><div class="tentacle r"></div>
-<div class="tentacle bl"></div><div class="tentacle br"></div>
-<div class="body"></div>
-<div class="face">
-  <div class="eye l"></div><div class="eye r"></div>
-  <div class="blush l"></div><div class="blush r"></div>
-  <div class="mouth"></div>
-</div>`,
-    robot: `<div class="antenna"></div>
-<div class="ear left"></div><div class="ear right"></div>
-<div class="body"></div>
-<div class="face">
-  <div class="eye l"></div><div class="eye r"></div>
-  <div class="blush l"></div><div class="blush r"></div>
-  <div class="mouth"></div>
-</div>`,
-    dino: `<div class="spine-mid"></div><div class="spine"></div>
-<div class="arm left"></div><div class="arm right"></div>
-<div class="foot left"></div><div class="foot right"></div>
-<div class="body"></div>
-<div class="face">
-  <div class="eye l"></div><div class="eye r"></div>
-  <div class="blush l"></div><div class="blush r"></div>
-  <div class="mouth"></div>
-</div>`,
-    mochi: `<div class="ahoge"></div>
-<div class="foot left"></div><div class="foot right"></div>
-<div class="body"></div>
-<div class="face">
-  <div class="eye l"></div><div class="eye r"></div>
-  <div class="blush l"></div><div class="blush r"></div>
-  <div class="mouth"></div>
-</div>`
+    octopus: '<use href="#pet-octopus"/>',
+    robot: '<use href="#pet-robot"/>',
+    dino: '<use href="#pet-dino"/>',
+    mochi: '<use href="#pet-mochi"/>'
   };
   // 设置页小伙伴头像：52×52 紧凑尺寸的独立模板（避免大版溢出圆框）
   const PET_AVATAR_52 = {
-    octopus: `<div class="tentacle tl" style="left:2px;transform:rotate(-28deg);width:10px;height:16px"></div>
-<div class="tentacle tr" style="right:2px;transform:rotate(28deg);width:10px;height:16px"></div>
-<div class="tentacle l" style="left:-1px;bottom:4px;transform:rotate(-42deg);width:10px;height:13px"></div>
-<div class="tentacle r" style="right:-1px;bottom:4px;transform:rotate(42deg);width:10px;height:13px"></div>
-<div class="tentacle bl" style="left:9px;bottom:-4px;width:11px;height:15px"></div>
-<div class="tentacle br" style="right:9px;bottom:-4px;width:11px;height:15px"></div>
-<div class="body" style="top:6px;width:42px;height:38px"></div>
-<div class="face">
-  <div class="eye l" style="top:17px;left:13px;width:7px;height:9px"></div>
-  <div class="eye r" style="top:17px;right:13px;width:7px;height:9px"></div>
-  <div class="mouth" style="top:31px;width:18px;height:9px"></div>
-</div>`,
-    robot: `<div class="antenna" style="height:10px"></div>
-<div class="ear left" style="top:22px;width:8px;height:18px"></div>
-<div class="ear right" style="top:22px;width:8px;height:18px"></div>
-<div class="body" style="top:10px;width:44px;height:40px"></div>
-<div class="face">
-  <div class="eye l" style="top:20px;left:11px;width:9px;height:9px"></div>
-  <div class="eye r" style="top:20px;right:11px;width:9px;height:9px"></div>
-  <div class="blush l" style="top:35px;left:6px;width:8px;height:5px"></div>
-  <div class="blush r" style="top:35px;right:6px;width:8px;height:5px"></div>
-  <div class="mouth" style="top:38px;width:20px;height:8px"></div>
-</div>`,
-    dino: `<div class="spine-mid" style="top:3px"></div>
-<div class="spine" style="top:6px"></div>
-<div class="arm left" style="top:30px;width:8px;height:11px"></div>
-<div class="arm right" style="top:30px;width:8px;height:11px"></div>
-<div class="foot left" style="left:10px;width:11px;height:8px"></div>
-<div class="foot right" style="right:10px;width:11px;height:8px"></div>
-<div class="body" style="top:12px;width:46px;height:38px"></div>
-<div class="face">
-  <div class="eye l" style="top:22px;left:12px;width:8px;height:9px"></div>
-  <div class="eye r" style="top:22px;right:12px;width:8px;height:9px"></div>
-  <div class="blush l" style="top:36px;left:6px;width:10px;height:5px"></div>
-  <div class="blush r" style="top:36px;right:6px;width:10px;height:5px"></div>
-  <div class="mouth" style="top:38px;width:22px;height:10px"></div>
-</div>`,
-    mochi: `<div class="ahoge" style="width:22px;height:15px"></div>
-<div class="foot left" style="left:10px;width:11px;height:6px"></div>
-<div class="foot right" style="right:10px;width:11px;height:6px"></div>
-<div class="body" style="top:9px;width:46px;height:44px"></div>
-<div class="face">
-  <div class="eye l" style="top:21px;left:13px;width:8px;height:9px"></div>
-  <div class="eye r" style="top:21px;right:13px;width:8px;height:9px"></div>
-  <div class="blush l" style="top:34px;left:5px;width:11px;height:6px"></div>
-  <div class="blush r" style="top:34px;right:5px;width:11px;height:6px"></div>
-  <div class="mouth" style="top:37px;width:16px;height:8px"></div>
-</div>`
+    octopus: '<use href="#pet-octopus"/>',
+    robot: '<use href="#pet-robot"/>',
+    dino: '<use href="#pet-dino"/>',
+    mochi: '<use href="#pet-mochi"/>'
   };
   let globalPet = 'robot';
   document.body.classList.add('global-pet-robot');
@@ -3765,19 +3470,7 @@
       });
     });
   });
-  // A8：学习阶段（pet-selected 后）全部底部 buttons/bottom-bar 隐藏，用 chat-flow 对话面板替代
-  const hideStudyButtons = ()=>{
-    if(!document.body.classList.contains('pet-selected')) return;
-    document.querySelectorAll('#home .screen .buttons, #home .screen .bottom-bar, #learn .screen .buttons, #learn .screen .bottom-bar, #result .screen .buttons, #result .screen .bottom-bar, #report .screen .buttons, #report .screen .bottom-bar, #settings .screen .buttons, #settings .screen .bottom-bar').forEach(el=>{
-      el.style.setProperty('display','none','important');
-    });
-  };
-  // 初始 & 每次 petNext 点击后执行，保证切换时立刻生效
-  hideStudyButtons();
-  document.addEventListener('click', (e)=>{
-    if(e.target.closest('.pet-next')) setTimeout(hideStudyButtons, 0);
-    if(e.target.closest('[data-goto]')) setTimeout(hideStudyButtons, 0);
-  });
+  // 按钮隐藏由 CSS 完成（body.voice-ready .screen .btn{display:none}）
   // 初始隐藏没选中卡的打勾
   document.querySelectorAll('.pet-card').forEach(c=>{
     const check = c.querySelector('.ic-lg');
@@ -3921,12 +3614,8 @@
   setActive(0);
   phones[0].classList.add('active');
 
-  // Splash 自动过渡：初次打开展示品牌 2.5s 后自动跳协议页，不要点击进入按钮
-  if(TOTAL >= 2){
-    setTimeout(()=>{
-      if(currentIdx === 0) setActive(1);
-    }, 2500);
-  }
+  // 启动页：设计稿停留展示，不自动跳转（自动跳转是实际 App 加载完成后的逻辑，不属于设计展示范围）
+  // 查看时用顶部下拉框 / 下一页手动切换到协议页
 })();
 </script>
 

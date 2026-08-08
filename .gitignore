@@ -11,6 +11,8 @@ android_components/
 
 # ── 本地协调（不进 git）──
 .agent/
+docs/reviews/
+reviews/
 # ── 本地配置 / 密钥 ──
 provider-config.json
 .env

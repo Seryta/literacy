@@ -213,11 +213,8 @@
   /* 三态：idle（待机省略号三点） / listening（录音态：耳朵动+声波竖条+思考云） / speaking（说话态：嘴动+波纹+语音泡） */
   /* A8：宠物选完（body.pet-selected）后，所有 screen 的 .buttons/.bottom-bar 默认全隐藏（26 屏 18 屏要藏），只有引导阶段 8 屏（guide-screen）恢复显示 —— 这比 JS 写选择器靠谱 100%，永远不会漏网 */
   body.voice-ready .screen .buttons,
-  body.voice-ready .screen .bottom-bar,
-  body.voice-ready .screen .btn{display:none !important}
-  /* 设置页是家人配置入口，按钮保留 */
-  body.voice-ready #settings .btn{display:inline-flex !important}
-  body.voice-ready #settings .fs-btn{display:inline-flex !important}
+  body.voice-ready .screen .bottom-bar{display:none !important}
+  /* 页面内按钮保留为触控兜底：宠物会说出图标、颜色与用途，用户可语音或直接点。 */
   /* 语音化后「点这里听我读」按钮不再需要（自动朗读） */
   body.voice-ready .voice-audio-btn{display:none !important}
 
@@ -583,6 +580,10 @@
   #settings .item h4{margin:0 0 3px;font-size:17px;font-weight:700;color:var(--ink);line-height:1.4}
   #settings .item p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.5}
   #settings .divider-label{font-size:12px;letter-spacing:1.5px;color:var(--ink-3);font-weight:700;margin:14px 4px 10px;padding-left:2px}
+
+  /* 关于页：与协议页一样让长文在手机壳内独立纵向滚动，顶栏始终可见 */
+  #about .topbar{padding:6px 20px 12px;display:flex;align-items:center;gap:14px;flex:0 0 auto}
+  #about .content{padding:14px 20px 180px;flex:1;overflow-y:auto;scrollbar-width:none}
 
   /* 字包选择页 */
   #packs .topbar{padding:6px 20px 14px}
@@ -1158,7 +1159,7 @@
       <h3 style="margin-top:16px"><span class="title-seal">四</span>哪些信息会离开本机</h3>
       <p>使用者可以放心，学习过程中会联网的情况只有<b>两种</b>，全部由家人操作或配置：<br>① 家人配置的「AI 写字老师」：在您需要在线评估的时候，把您学字时的回答文字发送到家人选定的模型服务商；<br>② 第一次使用时下载离线语音包：直连国内 ModelScope 官方站点下载模型文件，不会携带任何个人信息。<br>除此之外没有其它的网络请求。</p>
       <h3 style="margin-top:16px"><span class="title-seal">五</span>家人协助配置</h3>
-      <p>首次使用需要家人帮忙配置在线写字老师（可选）与下载语音包（必需）。仅需配置一次，之后使用者可以直接说话开始学习，后续家人也可在「设置」里随时修改或关闭联网配置。</p>
+      <p>首次使用需要家人帮忙配置在线写字老师与下载语音包，两项都完成后才能开始学习。语音包下载后可离线使用；AI 写字老师是教学流程的必要配置，家人可在「设置」里更新其服务商、Key 或模型。</p>
     </div>
 
     <div style="margin-top:16px">
@@ -1174,7 +1175,7 @@
         <div class="box">✓</div>
         <div>
           <h4>我已代为阅读并同意《隐私说明》与《说话功能说明》</h4>
-          <p>学习与说话内容仅保存在本机，不会上传或离开设备</p>
+          <p>我已了解：仅学习时说出的回答文字会发送给已配置的 AI 老师</p>
         </div>
       </div>
     </div>
@@ -2131,7 +2132,7 @@
       <h2 style="font-size:22px;font-weight:800;margin:4px 0 6px;text-align:center">不用看描线<br>自己写一次试试</h2>
       <p class="sub" style="text-align:center;margin:0 0 12px">停笔不动一小会儿，我就知道你写好了</p>
 
-      <!-- 空米字格（用户写了一半） -->
+      <!-- 独立写默认态：只显示空米字格；用户落笔后才渲染其本人笔迹，绝不预先展示答案 -->
       <div class="mizige" style="--s:290px;width:290px;height:290px;margin:0 auto;background:radial-gradient(120% 120% at 50% 50%,#FFFBF1 0%,#F3ECF7 100%)">
         <svg viewBox="0 0 100 100">
           <line x1="50" y1="2" x2="50" y2="98" class="grid-line"/>
@@ -2139,11 +2140,6 @@
           <line x1="2" y1="2" x2="98" y2="98" class="grid-guide"/>
           <line x1="98" y1="2" x2="2" y2="98" class="grid-guide"/>
           <rect x="2" y="2" width="96" height="96" class="grid-line" fill="none" rx="6"/>
-          <!-- 用户笔迹（墨色硬笔） -->
-          <path class="user" d="M12 28 L12 36 L38 36 L12 36 L12 70 Q 12 84 28 84 L 48 84 Q 54 84 54 70 L 54 38 Q 54 28 42 28 L 22 28"/>
-          <path class="user" d="M58 24 L90 24"/>
-          <path class="user" d="M74 24 L74 62"/>
-          <path class="user" d="M56 54 L86 54" style="stroke-dasharray:200;stroke-dashoffset:120;opacity:.6"/>
         </svg>
       </div>
 
@@ -2195,7 +2191,7 @@
   <div class="screen" id="learn" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <div class="topbar between">
       <div class="icon-btn goto-btn" data-goto="16">‹</div>
-      <span class="phase-cap assess"><span class="dot"></span>第 7 步 · 写得真好</span>
+      <span class="phase-cap assess"><span class="dot"></span>第 7 步 · 书写反馈</span>
     </div>
     <div class="content">
       <div class="score-ring">
@@ -2206,7 +2202,7 @@
         </svg>
         <div class="text">
           <div class="pct">86</div>
-          <div class="lbl">这次写得很棒</div>
+          <div class="lbl">本次书写反馈</div>
         </div>
       </div>
 
@@ -2242,7 +2238,7 @@
 
       <div style="position:relative;margin:16px auto 0;width:300px;height:140px">
         <div class="speak-bubble" style="left:0;right:auto;bottom:100px;min-width:200px;max-width:230px">
-          进步好大！这次的弯钩写得特别有力～
+          这一遍弯钩更稳了。下一次注意最后一捺的长度就好。
         </div>
         
       </div>
@@ -2373,7 +2369,7 @@
         <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12 L10.5 17.5 L20 7"/></svg>
       </div>
       <h1 class="t-1" style="text-align:center;font-size:26px;margin:0 0 4px">「张」学会了！</h1>
-      <p class="sub" style="text-align:center;margin:0 0 20px;font-size:15px">这是你名字里的第一个字，写会了就永远不会忘</p>
+      <p class="sub" style="text-align:center;margin:0 0 20px;font-size:15px">这是名字里的第一个字。隔一段时间再复习，会记得更牢。</p>
 
       <!-- 3 字环形进度（张 100%，建 50%，国 0%） -->
       <div style="display:flex;gap:12px;justify-content:center;margin:6px 0 16px">
@@ -2628,7 +2624,7 @@
         <div class="char-win"><span class="hanzi big" style="color:#2F6B47">弓</span></div>
         <div class="char-win"><span class="hanzi big" style="color:#2F6B47">长</span></div>
       </div>
-      <div class="big-seal">今日<br>学成</div>
+      <div class="big-seal">今日<br>完成</div>
 
       <!-- 下次预告 -->
       <div class="card" style="margin-top:2px">
@@ -2668,9 +2664,9 @@
 
     <!-- A8：Chat Flow 底部对话面板 · 本次总结 -->
     <div class="chat-flow">
-      <div class="bubble pet">今天我们学了 3 个字、写了 9 次，你真的很棒！</div>
+      <div class="bubble pet">今天学了 3 个字、写了 9 次。你把练习完成了。</div>
       <div class="bubble user">我觉得我写得比昨天好多了</div>
-      <div class="bubble pet">是呀！我们明天继续，一起加油把剩下的学完好不好～</div>
+      <div class="bubble pet">是的。明天从「建」字继续，慢慢学就好。</div>
       <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
   
@@ -3033,7 +3029,7 @@
           </div>
           <div class="col" style="gap:3px">
             <h4>隐私与第三方</h4>
-            <p>数据都在本机，不会上传</p>
+            <p>声音不留录音；仅回答文字会发送给 AI 老师</p>
           </div>
         </div>
         <svg class="ic" style="color:var(--ink-3)"><use href="#i-chevron"/></svg>
@@ -3058,15 +3054,15 @@
 <div class="phone">
   <span class="label">㉕ 关于与第三方声明</span>
   <div class="notch"></div>
-  <div class="screen" id="wrapup" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
+  <div class="screen" id="about" style="background:linear-gradient(180deg,#FFFBF0 0%,#FFF4DD 100%)">
     <svg class="watermark" style="right:-40px;top:20px;width:180px;height:180px;opacity:.04"><use href="#wm-mizige"/></svg>
     <svg class="watermark" style="left:-50px;bottom:80px;width:220px;height:220px;opacity:.04"><use href="#wm-mizige"/></svg>
 
-    <div class="topbar" style="padding:6px 20px 12px;display:flex;align-items:center;gap:14px">
+    <div class="topbar">
       <div class="icon-btn goto-btn" data-goto="10">‹</div>
       <h1 class="t-1" style="font-size:24px;margin:0">关于</h1>
     </div>
-    <div class="content" style="padding:14px 20px 180px">
+    <div class="content">
       <!-- Logo -->
       <div style="text-align:center;margin:14px 0 26px">
         <div style="display:inline-flex;align-items:center;gap:14px;padding:18px 24px;background:#fff;border-radius:22px;box-shadow:var(--shadow-card-2)">
@@ -3101,16 +3097,20 @@
         <div class="divider"></div>
         <div class="col" style="gap:12px">
           <div class="between">
-            <div class="sub">语音合成</div>
-            <span class="t-3" style="font-size:15px">本机离线 · 不用网络就能读</span>
+            <div class="sub">声音处理</div>
+            <span class="t-3" style="font-size:15px">本机识别与合成 · 不留录音</span>
           </div>
           <div class="between">
-            <div class="sub">写字识别</div>
-            <span class="t-3" style="font-size:15px">本机判断 · 笔迹不上传</span>
+            <div class="sub">学习数据</div>
+            <span class="t-3" style="font-size:15px">只存 App 私有目录</span>
           </div>
           <div class="between">
-            <div class="sub">教学引导</div>
-            <span class="t-3" style="font-size:15px">家人可选是否联网</span>
+            <div class="sub">AI 写字老师</div>
+            <span class="t-3" style="font-size:15px">必配 · 只收回答文字</span>
+          </div>
+          <div class="between">
+            <div class="sub">离线语音包</div>
+            <span class="t-3" style="font-size:15px">从 ModelScope 下载模型</span>
           </div>
         </div>
       </div>
@@ -3126,12 +3126,8 @@
           <b>用户服务协议</b><br>
           本软件仅作为识字练习工具，不承担因用户误读或误写字导致的直接或间接损失。所有学习记录仅存储在用户的本机设备中，卸载软件即清空。<br><br>
           <b>隐私政策 · 请家人重点查看</b><br>
-          一、离开本机的信息只有两种情况（全部由家人主动配置或操作）：<br>
-          &nbsp;&nbsp;① 家人配置的「AI 写字老师」：在需要在线评估的时候，把使用者学字时说出的回答文字发送到家人选定的模型服务商；<br>
-          &nbsp;&nbsp;② 第一次使用时下载离线语音包：直连国内 ModelScope 官方站点下载模型文件，不会携带任何个人信息。<br>
-          除此之外，代码中找不到任何其它主动上传到第三方的网络出口。<br><br>
-          二、所有数据（姓名、学习进度、学习回答的本地评估、家人配置的 API Key 本身）都只加密或明文保存在手机 App 私有目录里，其它 App 或系统看不到。<br><br>
-          三、特别放心一条：我们<b>不采集、不保存任何声音录音文件</b>。麦克风数据只在本机内存里做识别，识别完成立刻释放内存，手机存储和服务器上都找不到任何录音文件。<br><br>
+          离开本机的只有两件事：① 你自己配置的 AI 老师会收到你在学字时说出的回答文字；② 下载离线语音包时直连国内 ModelScope 取模型文件。其它所有数据（姓名、学习进度、学习回答的本地评估、你的 API Key 本身）都只加密或明文保存在你手机 App 私有目录里，代码里找不到任何出口上传到第三方。<br><br>
+          尤其放心：我们<b>不采集、不保存你的任何声音录音文件</b>，麦克风数据用完就在内存里释放了。<br><br>
           <b>第三方开源声明</b><br>
           使用了业内成熟的开源组件：离线语音识别与合成（不用联网就能听到声音、识别说话，开源可审计）、本机数据库（所有字、写过的笔迹只存在自己手机里）、基础运行库、网络请求（家人配置教学服务或下载语音包时才会用到）等。相关许可证可在家人协助下通过「手机系统设置 - 应用 - 成人识字 - 开源声明」查看全文。
         </div>
@@ -3148,9 +3144,9 @@
 
     <!-- A8：Chat Flow 底部对话面板 · 关于页 -->
     <div class="chat-flow">
-      <div class="bubble pet">这是关于页，所有数据都在你自己手机里，不会上传哦。</div>
+      <div class="bubble pet">这里能查看数据怎么处理：声音不保存，只有回答文字会给 AI 老师。</div>
       <div class="bubble user">语音也是离线的吗？</div>
-      <div class="bubble pet">对！语音合成、识别都在本机跑，完全不用网～</div>
+      <div class="bubble pet">对，语音识别和合成在本机运行；下载语音包时才会连接 ModelScope。</div>
       <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
     </div>
   </div>
@@ -3176,35 +3172,35 @@
 
   // 26 屏设计说明（记录在 HTML 内，单页查看时显示在当前屏下方；含交互处理逻辑）
   // 通用交互（屏 6+ 语音化后生效）：
-  // ① 底部按钮隐藏，宠物+说话框+声波条常驻左下角；对话整合到宠物说话框（打字机循环）；说明文字点击=点读朗读
-  // ② 流程推进由宠物 agent 自动判断：完成一步/停顿时主动询问（「要继续吗/要返回吗/想休息吗」），用户语音回复控制——不依赖按钮
-  // ③ 未被宠物替换的按钮（屏2-5 家人设置、屏15/16 书写工具、屏25 设置页）为家人/功能操作，识字可读，不面向不识字的老人操作
+  // ① 只隐藏底部大操作条；宠物+说话框+声波条常驻左下角，说明文字点击=点读朗读。
+  // ② 宠物会主动说出「继续/返回/休息」等命令；页面内按钮仍是触控兜底，宠物须同时说明图标、颜色和作用。
+  // ③ 按钮颜色区分操作类别，图标优先于文字；后续 Android 要把每个按钮注册为同名语音/Agent 控制能力。
   const NOTES = {
     1:'启动页：品牌展示 + 加载态（「正在加载语音老师…」加载点）。设计稿停留展示、不自动跳转（自动跳转是实际 App 加载完成后的逻辑）；查看时用顶部下拉框/下一页手动切换。',
     2:'协议确认（合规）：家人代为阅读《用户服务协议》《隐私说明》并双勾选，才解锁「下一步」（未勾选按钮为浅橙禁用态，提示先勾选）；「不同意，暂不使用」退出。此屏为家人辅助操作（识字可读），按钮无喇叭图标（避免与语音混淆/误触）。',
-    3:'引导 1/8 下载语音包（❌不可跳过）：下载进度可见，支持暂停/继续（暂停仅停下载，无「稍后再下」跳过出口）；下载失败提示重试；下完自动解锁「下载完成·继续」。语音是主通道，没有语音老师无法使用。',
-    4:'引导 2/8 配置 AI 老师（❌不可跳过）：家人协助填服务商/Key/模型，仅「配置好了·继续」一个出口；AI 评估是核心功能，缺了不完整。',
-    5:'引导 3/8 语音就绪：语音包已装完，本机离线可用；从这里进入全语音模式（voice-ready：底部按钮隐藏，宠物+说话框接管；后续流程推进由宠物 agent 自动询问「继续/返回」）。',
-    6:'引导 4/8 选宠物（❌必选）：说「第几个」或点卡片（点卡片=选好自动进入下一步）；默认机器人；宠物是全局语音交互角色。',
-    7:'引导 5/8 姓名（✅可跳过）：说「我叫XX」或家人输入；「对，就是这个」确认（btn-pair 保留给家人）；跳过可随时说「建档」补录。',
-    8:'引导 6/8 名字学习计划：逐字拆解部件 + 环形进度展示。',
-    9:'引导 7/8 学习方式说明：教控制词（提示一下/再读一遍/休息一下/不学了），说「开始」进学习。',
-    10:'首页：极简卡片导航，直接说「学我的名字/想学一个字/复习」操作；宠物自动待机-倾听-说话（voice 循环）；卡片描述文字点击=点读。',
+    3:'引导 2/8 下载语音包（❌不可跳过）：下载进度可见，支持暂停/继续（暂停仅停下载，无「稍后再下」跳过出口）；下载失败提示重试；下完自动解锁「下载完成·继续」。语音是主通道，没有语音老师无法使用。',
+    4:'引导 3/8 配置 AI 老师（❌不可跳过）：家人协助填服务商/Key/模型，仅「配置好了·继续」一个出口；AI 评估是核心功能，缺了不完整。',
+    5:'引导 4/8 语音就绪：语音包已装完，本机离线可用；从这里进入全语音模式（voice-ready：仅底部大操作条隐藏，宠物在左下角说话并主动询问「继续/返回」；页面内图标按钮保留为触控兜底）。',
+    6:'引导 5/8 选宠物（❌必选）：说「第几个」或点卡片；默认机器人；宠物是全局语音交互角色。原型用于逐屏验收，选中后不强制自动跳屏。',
+    7:'引导 6/8 姓名（✅可跳过）：说「我叫XX」或家人输入；「对，就是这个」确认（btn-pair 保留给家人）；跳过可随时说「建档」补录。',
+    8:'引导 7/8 名字学习计划：逐字拆解部件 + 环形进度展示。',
+    9:'引导 8/8 学习方式说明：教控制词（提示一下/再读一遍/休息一下/不学了），说「开始」进学习。',
+    10:'首页：极简卡片导航，直接说「学我的名字/想学一个字/复习」操作；宠物自动待机-倾听-说话（voice 循环）；卡片描述文字点击=点读。右上角齿轮是设置兜底，宠物会说「橙色齿轮，打开设置」。',
     11:'学习 1/9 介绍字（INTRODUCE）：认识读音与字形；教学语自动朗读；读完后宠物 agent 主动询问「要不要继续」，说「继续/下一步」进入下一阶段。',
     12:'学习 2/9 部件拆解（EXPLAIN）：难字拆成小部件先练熟；可语音「跳过，直接看笔顺」。',
     13:'学习 3/9 四选一辨字（RECOGNIZE）：听读音选对应汉字（点卡片=选择，答对绿/答错红，可反复）；「点这里听我读」语音化后自动隐藏。',
     14:'学习 4/9 笔顺演示（DEMONSTRATE）：笔画逐画高亮；点笔顺圆点切换演示当前笔。',
-    15:'学习 5/9 描红（GUIDED_TRACE）：顺浅灰虚线描；书写工具条（擦掉重来/硬笔粗细/看一眼原字）为功能操作保留——是写字必备工具而非导航，识字可辨图标，且与宠物语音无冲突。',
+    15:'学习 5/9 描红（GUIDED_TRACE）：顺浅灰虚线描；书写工具条（擦掉重来/硬笔粗细/看一眼原字）为功能操作保留。宠物须说出「橙色橡皮擦，擦掉重来」等图标、颜色和作用；语音命令与点按等价。',
     16:'学习 6/9 独立写（INDEPENDENT_WRITE）：空米字格自己写，停笔 800ms 自动识别。',
-    17:'学习 7/9 评估（ASSESS）：三颗朱砂点评级 + 具体反馈（笔顺/结构/下次注意）。',
+    17:'学习 7/9 评估（ASSESS）：朱砂点作书写反馈标记，重点给出笔顺、结构和下一次最有帮助的一条建议。',
     18:'学习 8/9 组词造句（SENTENCE）：点卡片朗读，生活常用词。',
     19:'学习 9/9 单字完成（CHAR_DONE）：名字进度更新；说「接下来学X」继续。',
     20:'复习 1/3 翻卡（FLIP_CARD）：点卡片翻面看释义；说「记得/没记住」作答。',
     21:'复习 2/3 场景巩固（CONSOLIDATE）：生活场景小题，点选项作答。',
-    22:'复习 3/3 本次总结（WRAPUP）：学成印章 + 明天预告；说「明天再来」回首页。',
+    22:'复习 3/3 本次总结（WRAPUP）：保留朱砂印章作为本次完成记录，不作考试式评级；明天预告后说「明天再来」回首页。',
     23:'姓名进度详情：逐字进度 + 部件拆解状态。',
     24:'字包选择：按生活场景选字组（家里/出门/买东西…），语音或点卡片切换。',
-    25:'设置页（家人配置）：字号三档（标准/大/超大，预览实时联动）、声音大小/语速、AI 老师、换宠物、清记录；家人操作按钮保留。',
+    25:'设置页（家人配置）：字号三档（标准/大/超大，预览实时联动）、声音大小/语速、AI 老师、换宠物、清记录；页面内按钮均保留，宠物会按图标、颜色和作用逐项说明。',
     26:'关于与第三方声明：版本 + 隐私 + 开源许可。'
   };
 
@@ -3299,7 +3295,7 @@
     ['idle','listening','speaking'].forEach(s=>wrap.classList.remove(s));
     wrap.classList.add(item.pet ? 'speaking' : 'listening');
     box.style.display = '';
-    typeText(box, (item.pet ? '🤖 ' : '🎤 ') + item.text, 42);
+    typeText(box, item.text, 42);
   }, 2800);
 
   // 声音波动条：voice-ready 时注入到每个悬浮宠物旁（正在监听的反馈）
@@ -3470,7 +3466,7 @@
       });
     });
   });
-  // 按钮隐藏由 CSS 完成（body.voice-ready .screen .btn{display:none}）
+  // 仅底部大操作条由 CSS 隐藏；页面内图标/功能按钮仍保留为触控兜底。
   // 初始隐藏没选中卡的打勾
   document.querySelectorAll('.pet-card').forEach(c=>{
     const check = c.querySelector('.ic-lg');

@@ -91,7 +91,7 @@ val allChars = characterDao.getAll()
 
 ### 1.4 生成 today_brief
 
-注入给 Agent 的首次上下文块：
+本机生成的首次上下文块（仅供本机排课与 UI 使用，不发送给在线 Provider）：
 
 ```
 <session_brief>
@@ -107,6 +107,8 @@ val allChars = characterDao.getAll()
 这个 brief 让 Agent 第一次 turn 时不必摸索状态，直接能说出 "上次你把'家'字写得不错，今天我们复习一下，再继续练'国'字"。
 
 ### 1.5 构建首次 Prompt
+
+初版在线请求不发送下列本地摘要。Provider 只接收 `AGENT-PROTOCOL.md` §2 定义的 `teaching_context`：当前字、教学阶段、允许动作、脱敏本地评估结果和回答文字。
 
 ```
 [System Prompt（固定部分）]

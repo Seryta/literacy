@@ -50,28 +50,16 @@
 
 ## 2. LLM 调用输入结构
 
-每次调用时发送的上下文：
+每次调用时发送的最小必要教学上下文。跨 session brief、学习者档案、姓名计划、复习队列及完整事件历史均只在本机使用，不进入 Provider 请求：
 
 ```
 [System Prompt（固定部分，system role）]
 [工具列表]
-<session_brief>       # 启动时生成，含日期/上次摘要/今日重点
-<learner_profile>
-<name_plan>
-<lesson_state>         # canonical phase + 允许动作列表 + 可选的当前练习提示
-<ui_state>
-<review_queue>          # 已注入，Agent 一般不需要再调 get_review_queue
-<previous_tool_result>  # 上一 turn 工具调用的结构化结果
-[event message]         # 当前触发事件 + payload（user role 或严格转义后的结构化块）
+<teaching_context>      # 当前字、教学阶段、允许动作、脱敏本地评估结果
+[event message]         # 当前回答文字或无身份信息的教学事件
 ```
 
-仅在 `EndRequested` turn 时，额外注入：
-
-```
-<current_session_results> # 当前 session 内已完成结果的摘要，用于结束总结
-```
-
-所有上下文由 App 每次 turn 重构建。Agent 不自己维护对话历史——App 根据事件和工具结果整理为结构化上下文块注入。
+所有上下文由 App 每次 turn 重构建。Agent 不自己维护对话历史；本机根据事件和工具结果选择白名单字段注入。
 
 用户原始输入、STT 转写、按钮文本、自由文本示例等用户来源内容，不直接拼接进固定 system prompt。它们必须满足以下之一：
 - 作为单独的 user-role 消息发送
@@ -300,15 +288,11 @@ CREATE TABLE session_character_results (
 
 ## 9. 隐私边界
 
-- 学习者姓名在 `profile` 表和 `name_plan` 表中**仅在本地 SQLite 存储**
-- 发送给 LLM Provider 的上下文中：
-  - `<learner_profile>` 中只传 `display_name`（称呼方式），不传 `learner_name`（真实姓名）
-  - `<name_plan>` 中传目标字列表和阶段，不传完整姓名原文
-  - 姓名目标字列表、当前教学阶段、用户语音转写文本、以及与教学直接相关的事件 payload 仍会发送给在线 Provider
-- 单字名 / 两字名场景：目标字列表可能近似完整姓名原文，属于本设计已接受的风险，隐私说明中需明示（首版可通过部件拆分缓解，不做强制）
-- 原始音频和原始手写轨迹永远不上传 LLM Provider
-- API Key 仅本地安全存储
-- 隐私说明中必须区分“本地持久化数据”和“为在线推理发送的运行时教学上下文”
+- 学习者姓名、称呼、姓名计划、完整进度、复习队列和会话摘要仅在本地 SQLite 存储。
+- 发送给 LLM Provider 的白名单仅为：当前字、教学阶段、用户语音转写后的回答文字、脱敏本地评估结果与本轮允许动作。
+- 原始音频、原始手写轨迹、姓名、API Key、完整学习档案与任何可识别身份的信息永远不上传 LLM Provider。
+- API Key 仅本地安全存储。
+- 隐私说明必须区分“本地持久化数据”和“为在线推理发送的最小必要教学上下文”。
 
 ## 10. 异常处理
 

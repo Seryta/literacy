@@ -2,7 +2,7 @@
 
 这是注入给 LLM 的完整系统提示词。结构参照 Pi Agent 的组织方式：角色定义 → 可用工具 → 工具使用指南 → 教学规则 → 安全边界。
 
-每次 Agent turn 时，在此基础之上再拼接 `<session_brief>`、`<lesson_state>`、`<ui_state>` 等动态上下文块。用户原始输入和事件 payload 不直接拼进这份固定提示词；它们由 App 以独立 user-role 消息或严格转义后的结构化字段提供。
+每次 Agent turn 时，在此基础之上只拼接白名单内的 `<teaching_context>` 动态块：当前字、教学阶段、允许动作、脱敏本地评估结果和用户回答文字。姓名、学习档案、会话摘要、原始音频、原始笔迹与 API Key 不得拼入 Provider 请求。
 
 ---
 
@@ -225,39 +225,19 @@
 
 ## 动态上下文注入格式
 
-每次 Agent turn 时，在上述基础 prompt 之后拼接以下动态块：
-
-其中 `<name_plan>` 以本地存储中的 canonical 状态为准；下面展示的字段名是**当前推荐的可读注入命名**，目的是帮助约束上下文语义，不要求后续代码实现必须使用完全相同的 DB 字段名、DTO 字段名或变量名。`当前进展摘要` 和 `下一里程碑` 由注入层根据 `name_plan` 当前状态派生生成，不要求单独落库。所有用户来源文本字段必须先转义或编码，不能原样突破结构边界。
+初版在线请求只允许拼接下列白名单字段。`session_brief`、学习者档案、姓名计划、完整进度、复习队列和会话摘要仅供本机排课与 UI 使用，禁止进入 Provider 请求。
 
 ```
-<session_brief>
-今日日期：{date}
-上次学习：{last_session_date}，学了 {last_session_chars}
-连续学习天数：{streak_days}
-今日建议重点：{today_focus}
-姓名目标进度：{name_progress_summary}
-</session_brief>
+<teaching_context>
+当前字：{char}
+教学阶段：{phase}
+允许动作：{allowed_actions}
+脱敏本地评估结果：{assessment_summary}
+用户回答文字：{answer_text}
+</teaching_context>
 
-<learner_profile>
-称呼：{display_name}
-当前水平：{level_description}
-学习路径：{learning_path}   <!-- write_parallel / read_primary / read_only -->
-偏好：语速 {speed} / 字号 {scale} / 拼音默认{pinyin_default}
-</learner_profile>
-
-<name_plan>
-目标字：{target_chars}
-优先级模式：{priority_mode}
-当前阶段：{current_stage}
-认读达成：{recognition_ready}
-提示写达成：{guided_writing_ready}
-独立写达成：{independent_writing_ready}
-签字达成：{signing_ready}
-当前进展摘要：{achieved_summary}
-下一里程碑：{next_milestone}
-</name_plan>
-
-<lesson_state>
+<!-- 本机使用，不发送给 Provider -->
+<local_lesson_state>
 当前目标：{objective}
 当前阶段：{phase}
 当前练习：{current_exercise}
@@ -265,8 +245,9 @@
 成功条件：{success_criteria}
 当前限制：{constraints}
 幂等键：{idempotency_key}
-</lesson_state>
+</local_lesson_state>
 
+<!-- 本机使用，不发送给 Provider -->
 <ui_state>
 屏幕：{screen}
 当前字：{char}
@@ -276,24 +257,30 @@
 最近输入（已转义）：{last_user_input}
 </ui_state>
 
+<!-- 本机使用，不发送给 Provider -->
 <review_queue>
 {review_list_with_scores_and_dates}
 </review_queue>
 
-<!-- 仅在 EndRequested turn 注入 -->
+<!-- 仅在 EndRequested 时本机使用，不发送给 Provider -->
 <current_session_results>
 {session_results_summary_for_end_turn}
 </current_session_results>
 
+<!-- 可发送的工具列表不含用户数据 -->
 <available_tools>
 {工具列表 — 与上方"可用工具"一致，由系统自动注入}
 </available_tools>
 
+<!-- 仅发送脱敏后的本轮必要结果 -->
 <previous_tool_result>
 {上一轮工具调用的结构化结果}
 </previous_tool_result>
 
+<!-- 仅发送无身份信息的教学事件 -->
 <event>
 {event_type}：{event_payload_json_escaped}
 </event>
 ```
+
+其中不得出现姓名、称呼、姓名目标字列表、完整学习档案、原始音频、原始笔迹或 API Key。用户来源文本在进入该结构前必须转义或编码；本地工具执行仍以 phase、capability、allowed_actions 和状态版本裁决，不因输入文本改变。

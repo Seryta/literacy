@@ -177,6 +177,10 @@
 
 ## Agent 工具系统
 
+### 在线教学数据边界（初版）
+
+在线 Provider 的每次请求只允许包含：当前字、教学阶段、学习者回答文字与脱敏后的本地评估结果。姓名、录音、原始笔迹、API Key、完整学习档案及跨 session 身份/进度摘要必须留在本机。具体字段白名单以 [`design/prototype/index.html`](../design/prototype/index.html) 顶部“全局产品设计说明 · 初版实现契约”为准。
+
 将 Pi 的 `read/bash/edit/write` 替换为教学工具。这里保留能力边界和设计意图；具体事件映射、输入输出结构、toolCall 顺序、幂等规则，以 [`AGENT-PROTOCOL.md`](./AGENT-PROTOCOL.md) 为准。
 
 ### 工具分组

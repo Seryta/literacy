@@ -92,6 +92,23 @@
   .watermark{position:absolute;pointer-events:none;opacity:.15}
   .label{position:absolute;top:-42px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:2px;color:#6b5a51;background:#fff;padding:6px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(60,40,20,.12);white-space:nowrap;font-weight:600}
 
+  /* ===== 原型的全局产品说明（非 App UI） ===== */
+  .global-spec{width:min(1120px,calc(100% - 80px));margin:0 auto 12px;background:#FFFBF3;border:1px solid #D9C49C;border-radius:24px;padding:26px 28px;box-shadow:0 10px 28px rgba(80,55,25,.12);color:var(--ink)}
+  .global-spec h2{margin:0;font-size:24px;line-height:1.3}
+  .global-spec h3{margin:0 0 8px;font-size:17px;color:var(--primary-deep)}
+  .global-spec p{margin:7px 0;font-size:14px;line-height:1.75;color:var(--ink-2)}
+  .global-spec .lead{font-size:16px;color:var(--ink);max-width:860px}
+  .global-spec .spec-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+  .global-spec .spec-card{background:#fff;border-radius:16px;padding:16px 18px;border:1px solid #F0E1BF}
+  .global-spec ul{margin:8px 0 0;padding-left:20px;color:var(--ink-2);font-size:14px;line-height:1.75}
+  .global-spec table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13.5px;line-height:1.55}
+  .global-spec th,.global-spec td{padding:9px 10px;text-align:left;vertical-align:top;border-bottom:1px solid #F0E6D1}
+  .global-spec th{color:var(--primary-deep);font-weight:800;background:#FFF7E8}
+  .global-spec .spec-note{margin-top:16px;padding:12px 14px;border-radius:14px;background:#EDF5EF;color:#315D3E;font-size:14px;line-height:1.65}
+  /* 阅读总则时不让单页导航浮层遮住契约内容；滚到原型屏幕后导航恢复可用。 */
+  body.single-mode .global-spec{position:relative;z-index:2001}
+  @media(max-width:720px){.global-spec{width:calc(100% - 32px);padding:20px}.global-spec .spec-grid{grid-template-columns:1fr}.global-spec table{font-size:12.5px}}
+
   /* ===== 通用基础组件 ===== */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:60px;border-radius:var(--r-l);padding:0 22px;font-size:17px;font-weight:700;border:0;cursor:pointer;font-family:inherit;letter-spacing:.3px;transition:transform .1s,box-shadow .15s;line-height:1.2}
   .btn:active{transform:translateY(1px)}
@@ -1060,15 +1077,92 @@
   </symbol>
 </svg>
 
-<!-- 屏幕标题说明（26 屏全量设计，除语音播放外全部交互可点） -->
+<!-- 原型标题与全局产品说明：以下说明不是 App 页面，而是实现前必须遵守的产品契约。 -->
 <div class="page-header" style="width:100%;padding:0 40px 20px;max-width:1400px;margin:0 auto;">
   <h1 style="margin:0 0 4px;font-size:22px;font-weight:900;color:#3A2E28;letter-spacing:1px">成人识字 · 完整高保真原型（26 屏 · 含启动页）</h1>
   <p style="margin:0;font-size:14px;color:#6B5A51;line-height:1.7">
-    设计原则：<b>用户不识字 → 语音主交互，吉祥物（小怪兽）常驻右下悬浮，听/说/待机三态动画；所有按钮挂喇叭小图标后缀</b>；
+    设计原则：<b>用户不识字 → 宠物语音主交互；底部大操作条交由语音接管，页面内图标按钮保留触控兜底</b>；
     硬楷（钢笔楷书，<code>font-weight:400</code> 不做卡通加粗）；<b>无任何内部开发术语</b>；
-    合规 0 步协议页；首页极简 3 卡；学习 9 阶段全流程。
+    协议确认、语音包与 AI 配置为必过项；首页极简 3 卡；学习 9 阶段全流程。
   </p>
 </div>
+
+<section class="global-spec" aria-label="全局产品设计说明">
+  <h2>全局产品设计说明 · 初版实现契约</h2>
+  <p class="lead">本区不是 App 内页面。它与 26 个原型页面共同构成初版的唯一产品依据：实现不得绕过、缩减或改变这里的规则；需要新增需求时，先更新本区和对应页面说明，再进入代码。</p>
+
+  <div class="spec-grid">
+    <div class="spec-card">
+      <h3>1. 初版边界</h3>
+      <ul>
+        <li>Android 手机优先；家人完成首启，学习者以语音完成日常学习。</li>
+        <li>包含：必过引导、姓名优先、单字九阶段、生活场景复习、设置与隐私说明。</li>
+        <li>语音包下载后，语音识别与合成离线运行；教学 session 仍需要已配置的 AI 老师与网络。</li>
+        <li>不纳入初版：账号体系、云同步、离线教学课程、发音打分、方言适配。</li>
+      </ul>
+    </div>
+    <div class="spec-card">
+      <h3>2. 家人和学习者的分工</h3>
+      <ul>
+        <li>家人：协议确认、下载语音包、配置/更新 AI 老师、处理系统权限与清空记录确认。</li>
+        <li>学习者：选宠物、说姓名或跳过建档、开始学习、提示/重听/暂停/结束、选择复习结果。</li>
+        <li>进入语音就绪后，宠物常驻左下角，右侧对话泡说明当前可说什么和保留按钮的颜色、图标、用途。</li>
+      </ul>
+    </div>
+    <div class="spec-card">
+      <h3>3. 数据处理白名单</h3>
+      <table>
+        <thead><tr><th>数据或连接</th><th>处理方式</th></tr></thead>
+        <tbody>
+          <tr><td>麦克风声音</td><td>仅在本机内存识别，用完释放；不采集、不保存录音。</td></tr>
+          <tr><td>姓名、进度、本地评估、API Key</td><td>只保存于 App 私有目录；API Key 按设备能力加密保存。</td></tr>
+          <tr><td>AI 老师请求</td><td>仅发送当前字、教学阶段、回答文字和脱敏本地评估结果；不得发送姓名、录音、原始笔迹、API Key 或完整学习档案。</td></tr>
+          <tr><td>离线语音包</td><td>仅下载时直连 ModelScope 获取模型文件；完成后语音离线可用。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="spec-card">
+      <h3>4. 语音与 Agent 动作合同</h3>
+      <table>
+        <thead><tr><th>动作</th><th>语音 / 触控 / Agent</th></tr></thead>
+        <tbody>
+          <tr><td>导航与学习</td><td>开始、继续、返回、提示、再读一遍、跳过、暂停、结束；三种入口“学名字/学一个字/复习”。</td></tr>
+          <tr><td>页面功能</td><td>选宠物、调字号/音量/语速、查看原字、擦掉重写、选择答案、切换字包。</td></tr>
+          <tr><td>高风险动作</td><td>清空学习记录必须由家人确认；AI 配置只能在家人协助页编辑。</td></tr>
+          <tr><td>实现规则</td><td>每项都有稳定 action id、对应语音词、触控兜底与同名 Agent 能力；三者执行同一结果。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="spec-card" style="margin-top:14px">
+    <h3>5. 必须覆盖的异常状态</h3>
+    <table>
+      <thead><tr><th>情形</th><th>产品行为与用户提示</th></tr></thead>
+      <tbody>
+        <tr><td>麦克风权限被拒绝</td><td>停止自动监听，不使用云端或系统录音替代；提示家人到系统设置开启，并保留可点的页面功能。</td></tr>
+        <tr><td>语音包下载失败、暂停或存储不足</td><td>显示进度和原因；只提供“继续/重试/处理存储”的原地恢复，不提供跳过进入学习的出口。</td></tr>
+        <tr><td>AI 配置无效或连不上</td><td>留在家人配置页，显示可理解的检查项；不能进入学习。已开始学习时保存当前进度，只提供“重试”或“结束本次”。</td></tr>
+        <tr><td>学习中网络中断</td><td>立即保留本地学习状态；宠物说明“网络没连上，稍后重试或今天先到这里”，不伪装成离线教学。</td></tr>
+        <tr><td>语音或手写识别不确定</td><td>请求再说一次、给一个提示或允许重写；不记为答错，不降低掌握度。</td></tr>
+        <tr><td>退到后台或锁屏</td><td>立刻停止麦克风监听和播报；回到前台后仅在允许的学习页恢复。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="spec-card" style="margin-top:14px">
+    <h3>6. 初版验收门槛</h3>
+    <ul>
+      <li>从协议到学习首字能完整走通：语音包、AI 配置、选宠物均不可绕过，姓名可跳过。</li>
+      <li>学习者可只用语音完成主路径；每个保留触控操作均可被宠物解释，且有等价 Agent 动作。</li>
+      <li>单字学习、暂停恢复、复习和结束后的进度记录可闭环；独立写不预先显示答案。</li>
+      <li>上述六种异常状态均有可见状态、可听提示和确定的下一步。</li>
+      <li>隐私页、设置页和实际网络请求均符合“数据处理白名单”；不出现额外出口。</li>
+      <li>大字号、系统放大、TalkBack、退后台停麦克风必须通过真机验收。</li>
+    </ul>
+  </div>
+  <div class="spec-note">实现顺序：先完成引导与数据边界，再完成首页语音路由、单字学习闭环、复习和设置。任何“已实现”状态都必须以本区验收门槛为准，而不是以某个页面已能显示为准。</div>
+</section>
 
 <!-- ========== 顶部操作条：总览模式 ↔ 单页模式切换，屏号导航 ========== -->
 <div class="toolbar">
@@ -1157,7 +1251,7 @@
       <h3 style="margin-top:16px"><span class="title-seal">三</span>学习记录保存</h3>
       <p>您的姓名、学习进度、练习的字、写过的笔迹、家人配置的 API Key，都只保存在本手机的 App 私有目录里（加密或明文方式存储在系统分配的私有文件夹，其它 App 读不到），不会离开这台设备，代码里找不到任何会把这些数据主动上传到第三方的出口。卸载软件会同时清除这些记录，如有需要请提前备份。</p>
       <h3 style="margin-top:16px"><span class="title-seal">四</span>哪些信息会离开本机</h3>
-      <p>使用者可以放心，学习过程中会联网的情况只有<b>两种</b>，全部由家人操作或配置：<br>① 家人配置的「AI 写字老师」：在您需要在线评估的时候，把您学字时的回答文字发送到家人选定的模型服务商；<br>② 第一次使用时下载离线语音包：直连国内 ModelScope 官方站点下载模型文件，不会携带任何个人信息。<br>除此之外没有其它的网络请求。</p>
+      <p>使用者可以放心，学习过程中会联网的情况只有<b>两种</b>，全部由家人操作或配置：<br>① 家人配置的「AI 写字老师」：在需要在线教学时，只发送当前学习的字、教学阶段、您说出的回答文字和脱敏后的本地评估结果；<br>② 第一次使用时下载离线语音包：直连国内 ModelScope 官方站点下载模型文件，不会携带任何个人信息。<br>姓名、录音、原始笔迹、API Key 和完整学习档案不会发送给模型服务商，除此之外没有其它网络请求。</p>
       <h3 style="margin-top:16px"><span class="title-seal">五</span>家人协助配置</h3>
       <p>首次使用需要家人帮忙配置在线写字老师与下载语音包，两项都完成后才能开始学习。语音包下载后可离线使用；AI 写字老师是教学流程的必要配置，家人可在「设置」里更新其服务商、Key 或模型。</p>
     </div>
@@ -1175,7 +1269,7 @@
         <div class="box">✓</div>
         <div>
           <h4>我已代为阅读并同意《隐私说明》与《说话功能说明》</h4>
-          <p>我已了解：仅学习时说出的回答文字会发送给已配置的 AI 老师</p>
+          <p>我已了解：AI 老师仅接收必要教学信息，不接收姓名、录音、原始笔迹或 API Key</p>
         </div>
       </div>
     </div>
@@ -3029,7 +3123,7 @@
           </div>
           <div class="col" style="gap:3px">
             <h4>隐私与第三方</h4>
-            <p>声音不留录音；仅回答文字会发送给 AI 老师</p>
+            <p>声音不留录音；AI 只接收必要教学信息</p>
           </div>
         </div>
         <svg class="ic" style="color:var(--ink-3)"><use href="#i-chevron"/></svg>
@@ -3106,7 +3200,7 @@
           </div>
           <div class="between">
             <div class="sub">AI 写字老师</div>
-            <span class="t-3" style="font-size:15px">必配 · 只收回答文字</span>
+            <span class="t-3" style="font-size:15px">必配 · 只收必要教学信息</span>
           </div>
           <div class="between">
             <div class="sub">离线语音包</div>
@@ -3126,7 +3220,7 @@
           <b>用户服务协议</b><br>
           本软件仅作为识字练习工具，不承担因用户误读或误写字导致的直接或间接损失。所有学习记录仅存储在用户的本机设备中，卸载软件即清空。<br><br>
           <b>隐私政策 · 请家人重点查看</b><br>
-          离开本机的只有两件事：① 你自己配置的 AI 老师会收到你在学字时说出的回答文字；② 下载离线语音包时直连国内 ModelScope 取模型文件。其它所有数据（姓名、学习进度、学习回答的本地评估、你的 API Key 本身）都只加密或明文保存在你手机 App 私有目录里，代码里找不到任何出口上传到第三方。<br><br>
+          离开本机的只有两件事：① 你自己配置的 AI 老师会收到当前学习的字、教学阶段、你在学字时说出的回答文字，以及脱敏后的本地评估结果；② 下载离线语音包时直连国内 ModelScope 取模型文件。姓名、录音、原始笔迹、API Key 和完整学习档案不会发送给模型服务商；其它所有数据都只加密或明文保存在你手机 App 私有目录里，代码里找不到任何出口上传到第三方。<br><br>
           尤其放心：我们<b>不采集、不保存你的任何声音录音文件</b>，麦克风数据用完就在内存里释放了。<br><br>
           <b>第三方开源声明</b><br>
           使用了业内成熟的开源组件：离线语音识别与合成（不用联网就能听到声音、识别说话，开源可审计）、本机数据库（所有字、写过的笔迹只存在自己手机里）、基础运行库、网络请求（家人配置教学服务或下载语音包时才会用到）等。相关许可证可在家人协助下通过「手机系统设置 - 应用 - 成人识字 - 开源声明」查看全文。
@@ -3144,7 +3238,7 @@
 
     <!-- A8：Chat Flow 底部对话面板 · 关于页 -->
     <div class="chat-flow">
-      <div class="bubble pet">这里能查看数据怎么处理：声音不保存，只有回答文字会给 AI 老师。</div>
+      <div class="bubble pet">这里能查看数据怎么处理：声音不保存，AI 只拿到教这一题需要的信息。</div>
       <div class="bubble user">语音也是离线的吗？</div>
       <div class="bubble pet">对，语音识别和合成在本机运行；下载语音包时才会连接 ModelScope。</div>
       <div class="mic-hint"><i class="mic-dot"></i>我在听 · 直接说就行</div>
